@@ -78,6 +78,36 @@ def _record_initial_tokens(db: Session, user: User, token_type: str, amount: int
     )
 
 
+def consume_user_tokens(db: Session, user: User, token_type: str, amount: int, reason: str, remark: str = "") -> None:
+    if token_type == "LLM":
+        before = user.llm_token_balance
+        if before < amount:
+            raise BizError("LLM token 额度不足", 400)
+        user.llm_token_balance -= amount
+        after = user.llm_token_balance
+    elif token_type == "EMBEDDING":
+        before = user.embedding_token_balance
+        if before < amount:
+            raise BizError("Embedding token 额度不足", 400)
+        user.embedding_token_balance -= amount
+        after = user.embedding_token_balance
+    else:
+        raise BizError("token 类型不正确", 400)
+    db.add(
+        UserTokenRecord(
+            user_id=user.id,
+            record_date=date.today(),
+            token_type=token_type,
+            change_type="CONSUME",
+            amount=amount,
+            balance_before=before,
+            balance_after=after,
+            reason=reason,
+            remark=remark,
+        )
+    )
+
+
 def login_user(db: Session, username: str, password: str) -> dict:
     user = db.scalar(select(User).where(User.username == username))
     if not user or not verify_password(password, user.password_hash):
@@ -126,4 +156,3 @@ def usage_view(user: User) -> dict:
             "requestCount": 0,
         },
     }
-

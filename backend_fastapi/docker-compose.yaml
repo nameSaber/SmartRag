@@ -23,5 +23,6 @@ services:
       OBJECT_STORAGE_BACKEND: minio
       SEARCH_BACKEND: elasticsearch
       ES_INDEX_NAME: pai_smart_documents
+      LLM_BACKEND: mock
       REGISTRATION_MODE: OPEN
       AUTO_CREATE_SCHEMA: "false"

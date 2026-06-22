@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.models.chat import ChatFeedback, Conversation, ConversationSession, Generation
 from app.models.user import User
+from app.integrations.llm import estimate_tokens, get_llm_gateway
 from app.services.document_service import search_documents
+from app.services.user_service import consume_user_tokens
 
 
 def create_session(db: Session, user: User, title: str | None = None) -> dict:
@@ -61,10 +63,9 @@ def generate_answer(db: Session, user: User, question: str, conversation_id: str
     session = get_or_create_session(db, user, conversation_id, question[:30] or "新会话")
     refs = search_documents(db, user, question, 3)
     generation_id = str(uuid4())
-    if refs:
-        answer = f"根据知识库检索结果：{refs[0]['matchedChunkText']}"
-    else:
-        answer = f"已收到问题：{question}"
+    answer = get_llm_gateway().generate(question, refs)
+    consumed_tokens = estimate_tokens(question, answer)
+    consume_user_tokens(db, user, "LLM", consumed_tokens, "对话消费", generation_id)
     ref_json = json.dumps(refs, ensure_ascii=False)
     generation = Generation(
         generation_id=generation_id,
@@ -131,4 +132,3 @@ def serialize_generation(row: Generation) -> dict:
         "errorMessage": row.error_message,
         "referenceMappings": json.loads(row.reference_mappings_json),
     }
-

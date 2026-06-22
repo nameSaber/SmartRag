@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     object_storage_backend: str = "database"
     search_backend: str = "database"
     es_index_name: str = "pai_smart_documents"
+    llm_backend: str = "mock"
+    llm_api_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model_name: str = "gpt-compatible"
+    llm_timeout_seconds: int = 30
     default_org_tag: str = "default"
     default_org_name: str = "默认组织"
     initial_llm_tokens: int = 100000
