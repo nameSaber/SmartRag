@@ -24,5 +24,6 @@ services:
       SEARCH_BACKEND: elasticsearch
       ES_INDEX_NAME: pai_smart_documents
       LLM_BACKEND: mock
+      RATE_LIMIT_BACKEND: redis
       REGISTRATION_MODE: OPEN
       AUTO_CREATE_SCHEMA: "false"

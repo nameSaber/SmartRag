@@ -9,6 +9,7 @@ from app.core.security import create_token, decode_token
 from app.models.user import User
 from app.schemas.chat import FeedbackRequest
 from app.services.chat_service import active_generation, generate_answer, get_generation, save_feedback
+from app.services.rate_limiter import enforce_rate_limit
 
 router = APIRouter()
 ws_router = APIRouter()
@@ -60,6 +61,7 @@ async def websocket_chat(websocket: WebSocket, token: str):
                 await websocket.send_json({"type": "cancelled"})
                 continue
             question = message.get("message") or message.get("question") or ""
+            enforce_rate_limit(db, "chatMessage", str(user.id))
             snapshot = generate_answer(db, user, question, message.get("conversationId"))
             await websocket.send_json({"type": "generation", "data": snapshot})
             await websocket.send_json({"type": "done", "generationId": snapshot["generationId"]})
@@ -67,4 +69,3 @@ async def websocket_chat(websocket: WebSocket, token: str):
         return
     finally:
         db.close()
-

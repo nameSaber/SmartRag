@@ -11,6 +11,13 @@ def client(monkeypatch):
     from app.core.config import get_settings
 
     get_settings.cache_clear()
+    from app.services.rate_limiter import reset_in_memory_rate_limiter
+
+    reset_in_memory_rate_limiter()
+    from app.core.database import Base, create_schema, engine
+
+    create_schema()
+    Base.metadata.drop_all(bind=engine)
     from app.main import create_app
 
     app = create_app()

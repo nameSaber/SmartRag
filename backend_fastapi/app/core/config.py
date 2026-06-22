@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     llm_model_name: str = "gpt-compatible"
     llm_timeout_seconds: int = 30
     wx_pay_callback_secret: str = ""
+    rate_limit_backend: str = "memory"
     default_org_tag: str = "default"
     default_org_name: str = "默认组织"
     initial_llm_tokens: int = 100000

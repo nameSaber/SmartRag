@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,18 +15,26 @@ from app.services.user_service import (
     set_primary_org,
     usage_view,
 )
+from app.services.rate_limiter import enforce_rate_limit
 
 router = APIRouter()
 
 
+def _request_identity(request: Request, fallback: str = "unknown") -> str:
+    # 测试和反向代理场景可显式传入客户端标识，生产环境默认使用连接 IP。
+    return request.headers.get("X-Test-Client") or (request.client.host if request.client else fallback)
+
+
 @router.post("/register")
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+def register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(db, "register", _request_identity(request))
     register_user(db, payload.username, payload.password, payload.inviteCode)
     return ok(None)
 
 
 @router.post("/login")
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(db, "login", _request_identity(request, payload.username))
     return ok(login_user(db, payload.username, payload.password))
 
 
@@ -108,4 +116,3 @@ def token_records(
             "empty": total == 0,
         }
     )
-
