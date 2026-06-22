@@ -70,16 +70,21 @@
 - 已完成并测试通过上传/文档/检索模块的第一版闭环：chunk 上传、状态、合并、预览、下载、可访问文档、关键字检索。
 - 已完成并测试通过聊天与会话模块的第一版闭环：会话创建/列表/历史/归档、生成快照、反馈、WebSocket `/chat/{token}`。
 - 已完成并测试通过管理后台与充值支付第一版：管理员用户列表、状态、组织标签、token 增发、套餐、下单、支付回调、订单查询。
+- 已完成并推送 Alembic 迁移模块：Docker 启动执行 `alembic upgrade head`，本地/测试保留 `AUTO_CREATE_SCHEMA` 快速建表。
+- 已完成并推送依赖健康检查模块：MySQL/Redis/Elasticsearch/Kafka/MinIO 状态通过 `/health/dependencies` 和 `/api/v1/admin/status` 返回。
+- 已完成并推送 MinIO 对象存储后端：Docker 环境可通过 `OBJECT_STORAGE_BACKEND=minio` 将分片和合并文件写入 MinIO。
+- 已完成并推送 Elasticsearch 检索后端：Docker 环境可通过 `SEARCH_BACKEND=elasticsearch` 写入和查询 ES 索引。
+- 已完成并推送 LLM 网关与 token 消耗：支持 `mock` 和 OpenAI-compatible 调用结构，对话会写入 LLM token 消费账本。
+- 已完成并推送管理后台配置扩展：邀请函、限流配置、模型供应商、用户组织标签分配。
+- 已完成并推送支付回调签名校验：支持 `WX_PAY_CALLBACK_SECRET` HMAC 验签，未配置时允许本地开发跳过。
 - 当前测试命令：在 `backend_fastapi/` 执行 `python -m pytest -q`。
-- 最近一次结果：`6 passed`。
+- 最近一次结果：`12 passed`。
 
 ## 后续优先级
 
-1. 将当前直接建表迁移为 Alembic 版本化迁移。
-2. 接入真实 MySQL、Redis、Elasticsearch、Kafka、MinIO 客户端与健康检查。
-3. 上传模块从数据库分片存储替换为 MinIO 分片/合并对象存储。
-4. 检索模块从数据库 LIKE 替换为 Elasticsearch 关键字 + 向量混合检索。
-5. 聊天模块接入真实 LLM 流式响应、生成取消、token 消耗与限流。
-6. 管理后台继续补齐邀请函 CRUD、模型供应商 CRUD/测试、限流配置更新、会话管理、MinIO 迁移、全量清理的环境开关和审计日志。
-7. 充值模块接入真实微信支付签名校验。
-8. 使用用户 Docker 依赖环境做一次端到端联调。
+1. Redis 限流从当前预留配置升级为真实滑动窗口/日窗口计数。
+2. Kafka 消费者补齐：上传合并后发送文件处理消息，消费者执行解析、切块、embedding、写 ES。
+3. Embedding 网关补齐：支持 OpenAI-compatible embedding、维度校验、embedding token 消耗。
+4. 聊天 WebSocket 改为真实逐 token 流式输出，并补齐取消生成状态机。
+5. 管理后台继续补齐会话管理、MinIO 迁移、全量清理的环境开关和审计日志。
+6. 使用用户 Docker 依赖环境做一次端到端联调。
