@@ -10,6 +10,7 @@ from app.core.security import hash_password
 from app.models.admin import RateLimitConfig
 from app.models.user import OrgTag, User
 from app.schemas.admin import (
+    CleanupAllRequest,
     InviteCodeRequest,
     ModelProviderRequest,
     OrgTagUpsertRequest,
@@ -25,8 +26,12 @@ from app.services.admin_service import (
     create_package,
     grant_tokens,
     list_invite_codes,
+    list_admin_conversations,
+    list_audit_logs,
     list_packages,
     list_users,
+    cleanup_all_data,
+    migrate_documents_to_minio,
     model_provider_settings,
     serialize_org_tag,
     upsert_invite_code,
@@ -56,6 +61,16 @@ def status(_: User = Depends(require_admin)):
 @router.get("/usage-overview")
 def usage_overview(_: User = Depends(require_admin)):
     return ok({"days": 7, "today": {}, "trends": [], "llmRankings": [], "embeddingRankings": [], "alerts": []})
+
+
+@router.get("/audit-logs")
+def audit_logs(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(list_audit_logs(db))
+
+
+@router.get("/conversations")
+def admin_conversations(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(list_admin_conversations(db))
 
 
 @router.get("/org-tags")
@@ -118,6 +133,16 @@ def save_model_provider(payload: ModelProviderRequest, current_user: User = Depe
 def assign_orgs(payload: UserOrgAssignRequest, _: User = Depends(require_admin), db: Session = Depends(get_db)):
     assign_user_orgs(db, payload.userId, payload.orgTags, payload.primaryOrg)
     return ok(None)
+
+
+@router.post("/minio/migrate")
+def minio_migrate(current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(migrate_documents_to_minio(db, current_user))
+
+
+@router.post("/system/cleanup-all")
+def cleanup_all(payload: CleanupAllRequest, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(cleanup_all_data(db, current_user, payload.confirmText))
 
 
 @router.post("/users/token-grant")

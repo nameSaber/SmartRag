@@ -70,3 +70,7 @@ class UserOrgAssignRequest(BaseModel):
     userId: int
     orgTags: list[str]
     primaryOrg: str
+
+
+class CleanupAllRequest(BaseModel):
+    confirmText: str

@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     embedding_dimension: int = 8
     wx_pay_callback_secret: str = ""
     rate_limit_backend: str = "memory"
+    admin_dangerous_operations_enabled: bool = False
     default_org_tag: str = "default"
     default_org_name: str = "默认组织"
     initial_llm_tokens: int = 100000

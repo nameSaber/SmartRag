@@ -4,8 +4,12 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.exceptions import BizError
-from app.models.admin import InviteCode, ModelProviderConfig, RateLimitConfig, RechargeOrder, RechargePackage
+from app.integrations.object_storage import get_object_storage
+from app.models.admin import AuditLog, InviteCode, ModelProviderConfig, RateLimitConfig, RechargeOrder, RechargePackage
+from app.models.chat import Conversation, ConversationSession, Generation
+from app.models.document import Document
 from app.models.user import OrgTag, User, UserOrgTag, UserTokenRecord
 from app.services.user_service import serialize_user
 
@@ -139,6 +143,72 @@ def assign_user_orgs(db: Session, user_id: int, org_tags: list[str], primary_org
         db.add(UserOrgTag(user_id=user_id, tag_id=tag))
     user.primary_org = primary_org
     db.commit()
+
+
+def write_audit_log(db: Session, actor: User | None, action: str, target_type: str, target_id: str = "", detail: str = "") -> None:
+    db.add(AuditLog(actor_user_id=actor.id if actor else None, action=action, target_type=target_type, target_id=target_id, detail=detail))
+    db.flush()
+
+
+def list_audit_logs(db: Session) -> list[dict]:
+    rows = db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(100)).all()
+    return [
+        {
+            "id": row.id,
+            "actorUserId": row.actor_user_id,
+            "action": row.action,
+            "targetType": row.target_type,
+            "targetId": row.target_id,
+            "detail": row.detail,
+            "createdAt": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
+
+
+def list_admin_conversations(db: Session) -> list[dict]:
+    rows = db.scalars(select(ConversationSession).order_by(ConversationSession.updated_at.desc())).all()
+    return [
+        {
+            "id": row.id,
+            "userId": row.user_id,
+            "conversationId": row.conversation_id,
+            "title": row.title,
+            "status": row.status,
+            "createdAt": row.created_at.isoformat() if row.created_at else None,
+            "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
+        }
+        for row in rows
+    ]
+
+
+def migrate_documents_to_minio(db: Session, actor: User) -> dict:
+    storage = get_object_storage()
+    migrated = 0
+    for doc in db.scalars(select(Document).where(Document.deleted.is_(False))).all():
+        if not doc.content:
+            continue
+        storage.put_bytes(doc.object_key, doc.content.encode("utf-8"), "application/octet-stream")
+        migrated += 1
+    write_audit_log(db, actor, "MINIO_MIGRATE", "documents", detail=f"migrated={migrated}")
+    db.commit()
+    return {"migrated": migrated}
+
+
+def cleanup_all_data(db: Session, actor: User, confirm_text: str) -> dict:
+    if not settings.admin_dangerous_operations_enabled:
+        raise BizError("高危操作未启用", 403)
+    if confirm_text != "CONFIRM_CLEANUP_ALL":
+        raise BizError("确认文本不正确", 400)
+    write_audit_log(db, actor, "CLEANUP_ALL", "system", detail="cleanup requested")
+    deleted = {
+        "generations": db.query(Generation).delete(),
+        "conversations": db.query(Conversation).delete(),
+        "conversationSessions": db.query(ConversationSession).delete(),
+        "documents": db.query(Document).delete(),
+    }
+    db.commit()
+    return {"deleted": deleted}
 
 
 def grant_tokens(db: Session, user_id: int, token_type: str, amount: int, reason: str) -> None:
