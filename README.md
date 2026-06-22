@@ -27,6 +27,8 @@ backend_fastapi/
 默认账号密码按技术文档约定：
 
 - MySQL root 密码：`PaiSmart2025`
+- MySQL 应用账号：`smart_rag`
+- MySQL 应用密码：`SmartRag2026`
 - Redis 密码：`PaiSmart2025`
 - Elasticsearch elastic 密码：`PaiSmart2025`
 - MinIO 账号：`admin`
@@ -76,7 +78,7 @@ Copy-Item .env.example .env
 根据实际部署环境修改 `.env`。Docker 部署推荐至少配置：
 
 ```env
-DATABASE_URL=mysql+pymysql://root:PaiSmart2025@host.docker.internal:3306/pai_smart_fastapi?charset=utf8mb4
+DATABASE_URL=mysql+pymysql://smart_rag:SmartRag2026@mysql:3306/pai_smart_fastapi?charset=utf8mb4
 JWT_SECRET_KEY=change-me-in-production
 AUTO_CREATE_SCHEMA=false
 OBJECT_STORAGE_BACKEND=minio
@@ -99,9 +101,26 @@ docker build -t smart-rag-fastapi:latest .
 docker compose up -d --build
 ```
 
-该 compose 会启动两个本项目容器：
+本项目 compose 默认接入外部基础设施网络 `pai_smart_default`，并通过容器名连接依赖：
+
+- MySQL: `mysql:3306`
+- Redis: `redis:6379`
+- Elasticsearch: `es:9200`
+- Kafka: `kafka:9092`
+- MinIO: `minio:19000`
+
+默认会启动本项目 API 容器：
 
 - `smart-rag-fastapi`：FastAPI API 服务。
+
+如需启用 Kafka 文件处理消费者，请确认 Kafka 的 advertised listener 对容器可达，然后额外启动：
+
+```powershell
+docker compose --profile consumer up -d --build file-consumer
+```
+
+消费者容器：
+
 - `smart-rag-file-consumer`：Kafka 文件处理消费者，消费 `file-processing` 主题。
 
 服务启动时会自动执行：
@@ -116,15 +135,15 @@ alembic upgrade head
 
 | 变量 | 说明 | 示例 |
 | --- | --- | --- |
-| `DATABASE_URL` | MySQL 或 SQLite 连接串 | `mysql+pymysql://root:PaiSmart2025@host.docker.internal:3306/pai_smart_fastapi?charset=utf8mb4` |
+| `DATABASE_URL` | MySQL 或 SQLite 连接串 | `mysql+pymysql://smart_rag:SmartRag2026@mysql:3306/pai_smart_fastapi?charset=utf8mb4` |
 | `JWT_SECRET_KEY` | JWT 签名密钥，生产必须修改 | `your-secret` |
 | `AUTO_CREATE_SCHEMA` | 是否启动时自动建表，Docker 建议 `false` | `false` |
-| `REDIS_URL` | Redis 连接串 | `redis://:PaiSmart2025@host.docker.internal:6379/0` |
-| `ES_URL` | Elasticsearch 地址 | `http://elastic:PaiSmart2025@host.docker.internal:9200` |
-| `KAFKA_BOOTSTRAP_SERVERS` | Kafka 地址 | `host.docker.internal:9092` |
+| `REDIS_URL` | Redis 连接串 | `redis://:PaiSmart2025@redis:6379/0` |
+| `ES_URL` | Elasticsearch 地址 | `http://elastic:PaiSmart2025@es:9200` |
+| `KAFKA_BOOTSTRAP_SERVERS` | Kafka 地址 | `kafka:9092` |
 | `FILE_PROCESSING_BACKEND` | 文件处理后端：`local` 或 `kafka` | `kafka` |
 | `FILE_PROCESSING_TOPIC` | Kafka 文件处理主题 | `file-processing` |
-| `MINIO_ENDPOINT` | MinIO 地址 | `host.docker.internal:19000` |
+| `MINIO_ENDPOINT` | MinIO 地址 | `minio:19000` |
 | `MINIO_ACCESS_KEY` | MinIO 账号 | `admin` |
 | `MINIO_SECRET_KEY` | MinIO 密码 | `PaiSmart2025` |
 | `MINIO_BUCKET` | 对象存储桶 | `pai-smart` |
@@ -169,6 +188,16 @@ curl http://localhost:8000/health/dependencies
 
 - 生产环境必须修改 `JWT_SECRET_KEY`。
 - Docker 部署建议使用 MySQL 和 Alembic，不建议使用 SQLite。
+- 若使用已有 MySQL 容器，请先创建应用账号并授权：
+
+```sql
+CREATE DATABASE IF NOT EXISTS pai_smart_fastapi CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'smart_rag'@'%' IDENTIFIED BY 'SmartRag2026';
+GRANT CREATE ON *.* TO 'smart_rag'@'%';
+GRANT ALL PRIVILEGES ON pai_smart_fastapi.* TO 'smart_rag'@'%';
+FLUSH PRIVILEGES;
+```
+
 - 若启用 `OBJECT_STORAGE_BACKEND=minio`，请确保 MinIO 可访问且账号密码正确。
 - 若启用 `SEARCH_BACKEND=elasticsearch`，请确保 Elasticsearch 已启动并允许当前服务连接。
 - LLM 已按 DeepSeek OpenAI-compatible API 配置，部署前必须设置 `LLM_API_KEY` 或宿主环境变量 `DEEPSEEK_API_KEY`。
@@ -181,3 +210,11 @@ curl http://localhost:8000/health/dependencies
 ```powershell
 python -m app.consumers.file_processing_consumer
 ```
+
+若在 Docker 中运行消费者，请使用：
+
+```powershell
+docker compose --profile consumer up -d --build file-consumer
+```
+
+注意：如果 Kafka 在基础设施 compose 中把 advertised listener 配成 `localhost:9092`，容器内消费者会在读取 broker 元数据后连接到自身的 `localhost`，导致连接失败。此时请将 Kafka advertised listener 调整为容器可访问的主机名，或在宿主机直接运行消费者进程。

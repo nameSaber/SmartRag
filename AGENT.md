@@ -41,12 +41,13 @@
 外部依赖由用户已有 compose 提供：
 
 - MySQL: `localhost:3306`，root 密码 `PaiSmart2025`
+- MySQL 应用账号：`smart_rag`，密码 `SmartRag2026`，仅授权 `pai_smart_fastapi` 库
 - Redis: `localhost:6379`，密码 `PaiSmart2025`
 - Elasticsearch: `localhost:9200`，密码 `PaiSmart2025`
 - Kafka: `localhost:9092`
 - MinIO: `localhost:19000`，账号 `admin`，密码 `PaiSmart2025`
 
-本项目需要提供自己的 Dockerfile 和 compose 服务，用来连接上述依赖。
+本项目需要提供自己的 Dockerfile 和 compose 服务，用来连接上述依赖。当前 Docker compose 直接接入外部网络 `pai_smart_default`，通过 `mysql`、`redis`、`es`、`kafka`、`minio` 容器名访问依赖，避免宿主机端口冲突。
 
 ## 接口响应约定
 
@@ -87,11 +88,12 @@
 - 已完成并推送独立 Kafka 文件处理消费者入口，可用 `python -m app.consumers.file_processing_consumer` 启动。
 - 已完成并推送 TXT/Markdown/PDF/DOCX 文件解析器。
 - 已完成并推送 Elasticsearch 关键词 + 向量混合检索，并记录查询 embedding token 消耗。
+- 已完成 Docker 端到端联调修复：补充 MySQL 8 PyMySQL 认证依赖 `cryptography`，Docker 部署连接串改为专用 MySQL 应用用户 `smart_rag`，并将 Kafka 文件处理消费者改为 `consumer` profile 手动启用，避免默认 API 部署被 Kafka advertised listener 配置影响。
+- 已完成 Docker API 端到端验证：`docker compose up -d --force-recreate api` 后，`/health/dependencies` 返回 MySQL/Redis/Elasticsearch/Kafka/MinIO 全部 `UP`，并通过真实 Docker 服务完成注册、登录、`/api/v1/users/me` 闭环。
 - 当前测试命令：在 `backend_fastapi/` 执行 `python -m pytest -q`。
-- 最近一次结果：`25 passed`。
+- 最近一次结果：`30 passed`。
 
 ## 后续优先级
 
-1. 将 WebSocket 生成流程重构为边流式生成边持久化，避免 DeepSeek 非流式与流式双路径割裂。
-2. PDF/DOCX 解析继续增强页码、标题层级、anchor 定位。
-3. 使用用户 Docker 依赖环境做一次端到端联调。
+1. 在 Kafka advertised listener 对容器可达后，启用 `docker compose --profile consumer up -d --build file-consumer` 验证异步文件处理链路。
+2. 继续对照 PaiSmart FastAPI 技术文档补齐剩余接口细节和兼容字段。

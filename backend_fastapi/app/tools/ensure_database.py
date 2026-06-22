@@ -1,4 +1,5 @@
 from sqlalchemy.engine import make_url
+from sqlalchemy.engine.url import URL
 
 from app.core.config import settings
 
@@ -10,9 +11,10 @@ def database_name_from_url(database_url: str) -> str | None:
     return url.database
 
 
-def root_mysql_url(database_url: str) -> str:
+def root_mysql_url(database_url: str) -> URL:
     url = make_url(database_url)
-    return str(url.set(database=None))
+    # URL 转字符串会默认隐藏密码，启动脚本需要保留真实密码连接 MySQL。
+    return url._replace(database=None)
 
 
 def ensure_database_exists() -> None:
@@ -22,7 +24,7 @@ def ensure_database_exists() -> None:
 
     import pymysql
 
-    root_url = make_url(root_mysql_url(settings.database_url))
+    root_url = root_mysql_url(settings.database_url)
     connection = pymysql.connect(
         host=root_url.host or "localhost",
         port=root_url.port or 3306,
@@ -48,4 +50,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
