@@ -26,10 +26,33 @@ def _parse_pdf(content: bytes) -> str:
     for index, page in enumerate(reader.pages, start=1):
         text = page.extract_text() or ""
         if text:
-            pages.append(f"[page:{index}]\n{text}")
+            pages.append(f"[[page:{index};anchor:page-{index}]]\n{text.strip()}")
     return "\n\n".join(pages)
 
 
 def _parse_docx(content: bytes) -> str:
     doc = DocxDocument(BytesIO(content))
-    return "\n".join(paragraph.text for paragraph in doc.paragraphs if paragraph.text)
+    parts = []
+    current_anchor = "document-start"
+    for paragraph in doc.paragraphs:
+        text = paragraph.text.strip()
+        if not text:
+            continue
+        style_name = paragraph.style.name if paragraph.style else ""
+        if style_name.startswith("Heading"):
+            level = _heading_level(style_name)
+            current_anchor = slugify_anchor(text)
+            parts.append(f"[[page:1;anchor:{current_anchor};heading:{level}]]\n{text}")
+        else:
+            parts.append(f"[[page:1;anchor:{current_anchor}]]\n{text}")
+    return "\n\n".join(parts)
+
+
+def _heading_level(style_name: str) -> int:
+    digits = "".join(char for char in style_name if char.isdigit())
+    return int(digits or "1")
+
+
+def slugify_anchor(text: str) -> str:
+    cleaned = "".join(char.lower() if char.isalnum() else "-" for char in text)
+    return "-".join(part for part in cleaned.split("-") if part)[:80] or "section"

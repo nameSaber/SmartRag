@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+import re
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -21,6 +22,8 @@ SUPPORTED_TYPES = [
     {"extension": ".pdf", "mimeType": "application/pdf"},
     {"extension": ".docx", "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
 ]
+
+ANCHOR_PATTERN = re.compile(r"\[\[page:(?P<page>\d+);anchor:(?P<anchor>[^;\]]+)(?:;heading:(?P<heading>\d+))?\]\]\s*")
 
 
 def _user_orgs(user: User) -> set[str]:
@@ -173,24 +176,42 @@ def rebuild_document_index(db: Session, document: Document, user: User) -> list[
 
 
 def _build_index_chunks(document: Document) -> list[dict]:
-    # 这里先按固定窗口模拟解析切块，后续可替换为 PDF/DOCX 解析器。
+    # 按解析器输出的结构标记保留页码和 anchor，再在段落过长时切成固定窗口。
     indexed_chunks = []
-    for index, start in enumerate(range(0, max(len(document.content), 1), 800)):
-        part = document.content[start : start + 800] or ""
-        indexed_chunks.append(
-            {
-                "fileMd5": document.file_md5,
-                "chunkId": index,
-                "textContent": part,
-                "pageNumber": 1,
-                "anchorText": f"chunk-{index}",
-                "fileName": document.file_name,
-                "userId": document.user_id,
-                "orgTag": document.org_tag,
-                "isPublic": document.is_public,
-            }
-        )
+    chunk_id = 0
+    for segment in _structured_segments(document.content):
+        for start in range(0, max(len(segment["text"]), 1), 800):
+            part = segment["text"][start : start + 800] or ""
+            indexed_chunks.append(
+                {
+                    "fileMd5": document.file_md5,
+                    "chunkId": chunk_id,
+                    "textContent": part,
+                    "pageNumber": segment["pageNumber"],
+                    "anchorText": segment["anchorText"],
+                    "fileName": document.file_name,
+                    "userId": document.user_id,
+                    "orgTag": document.org_tag,
+                    "isPublic": document.is_public,
+                }
+            )
+            chunk_id += 1
     return indexed_chunks
+
+
+def _structured_segments(content: str) -> list[dict]:
+    matches = list(ANCHOR_PATTERN.finditer(content))
+    if not matches:
+        return [{"text": content, "pageNumber": 1, "anchorText": "document-start"}]
+    segments = []
+    for index, match in enumerate(matches):
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+        text = content[start:end].strip()
+        if not text:
+            continue
+        segments.append({"text": text, "pageNumber": int(match.group("page")), "anchorText": match.group("anchor")})
+    return segments or [{"text": content, "pageNumber": 1, "anchorText": "document-start"}]
 
 
 def _file_processing_payload(document: Document, requester_id: int, task_type: str) -> dict:
