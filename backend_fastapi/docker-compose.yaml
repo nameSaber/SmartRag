@@ -19,5 +19,7 @@ services:
       MINIO_ENDPOINT: host.docker.internal:19000
       MINIO_ACCESS_KEY: admin
       MINIO_SECRET_KEY: PaiSmart2025
+      MINIO_BUCKET: pai-smart
+      OBJECT_STORAGE_BACKEND: minio
       REGISTRATION_MODE: OPEN
       AUTO_CREATE_SCHEMA: "false"

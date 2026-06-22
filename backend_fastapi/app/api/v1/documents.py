@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.responses import ok
 from app.models.user import User
-from app.services.document_service import accessible_documents, get_document_for_user
+from app.services.document_service import accessible_documents, get_document_for_user, read_document_bytes
 
 router = APIRouter()
 
@@ -25,7 +25,7 @@ def uploads(current_user: User = Depends(get_current_user), db: Session = Depend
 @router.get("/download")
 def download(fileMd5: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     doc = get_document_for_user(db, current_user, fileMd5)
-    return Response(content=doc.content.encode("utf-8"), media_type="application/octet-stream", headers={"Content-Disposition": f'attachment; filename="{doc.file_name}"'})
+    return Response(content=read_document_bytes(doc), media_type="application/octet-stream", headers={"Content-Disposition": f'attachment; filename="{doc.file_name}"'})
 
 
 @router.get("/download-by-md5")
@@ -74,4 +74,3 @@ def reindex(fileMd5: str, current_user: User = Depends(get_current_user), db: Se
 @router.post("/{fileMd5}/vectorization/retry")
 def retry_vectorization(fileMd5: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return reindex(fileMd5, current_user, db)
-

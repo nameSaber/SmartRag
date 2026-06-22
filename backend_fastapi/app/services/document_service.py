@@ -4,6 +4,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BizError
+from app.core.config import settings
+from app.integrations.object_storage import chunk_key, document_key, get_object_storage
 from app.models.document import Document, DocumentChunk, UploadChunk, UploadTask
 from app.models.user import User
 
@@ -56,10 +58,13 @@ def save_chunk(
         raise BizError("只有文件所有者可以继续上传", 403)
 
     chunk = db.scalar(select(UploadChunk).where(UploadChunk.file_md5 == file_md5, UploadChunk.chunk_index == chunk_index))
+    stored_content = b"" if settings.object_storage_backend == "minio" else content
     if chunk:
-        chunk.content = content
+        chunk.content = stored_content
     else:
-        db.add(UploadChunk(file_md5=file_md5, chunk_index=chunk_index, content=content))
+        db.add(UploadChunk(file_md5=file_md5, chunk_index=chunk_index, content=stored_content))
+    if settings.object_storage_backend == "minio":
+        get_object_storage().put_bytes(chunk_key(file_md5, chunk_index), content)
     db.commit()
     return upload_status(db, user, file_md5)
 
@@ -94,14 +99,17 @@ def merge_file(db: Session, user: User, file_md5: str, file_name: str, total_chu
 
     task.status = 2
     db.flush()
-    raw = b"".join(chunk.content for chunk in chunks)
+    raw = b"".join(_read_chunk_bytes(chunk) for chunk in chunks)
     text = raw.decode("utf-8", errors="ignore")
+    object_key = document_key(file_md5, file_name)
+    if settings.object_storage_backend == "minio":
+        get_object_storage().put_bytes(object_key, raw)
     document = db.scalar(select(Document).where(Document.file_md5 == file_md5))
     if not document:
         document = Document(
             file_md5=file_md5,
             file_name=file_name,
-            object_key=f"documents/{file_md5}/{file_name}",
+            object_key=object_key,
             content=text,
             user_id=user.id,
             org_tag=org,
@@ -115,6 +123,18 @@ def merge_file(db: Session, user: User, file_md5: str, file_name: str, total_chu
     _rebuild_chunks(db, file_md5, text)
     db.commit()
     return _serialize_document(document)
+
+
+def read_document_bytes(doc: Document) -> bytes:
+    if settings.object_storage_backend == "minio":
+        return get_object_storage().get_bytes(doc.object_key)
+    return doc.content.encode("utf-8")
+
+
+def _read_chunk_bytes(chunk: UploadChunk) -> bytes:
+    if settings.object_storage_backend == "minio":
+        return get_object_storage().get_bytes(chunk_key(chunk.file_md5, chunk.chunk_index))
+    return chunk.content
 
 
 def _rebuild_chunks(db: Session, file_md5: str, text: str) -> None:
@@ -210,4 +230,3 @@ def _serialize_document(doc: Document | None) -> dict:
         "createdAt": doc.created_at.isoformat() if doc.created_at else None,
         "updatedAt": doc.updated_at.isoformat() if doc.updated_at else None,
     }
-
