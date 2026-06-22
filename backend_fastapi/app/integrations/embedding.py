@@ -6,6 +6,8 @@ from app.core.config import settings
 
 
 class EmbeddingGateway:
+    """Embedding 统一网关，支持真实 OpenAI-compatible 服务和稳定 mock 向量。"""
+
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if settings.embedding_backend == "openai_compatible":
             return self._embed_openai_compatible(texts)
@@ -33,9 +35,9 @@ class EmbeddingGateway:
 
 
 def estimate_embedding_tokens(texts: list[str]) -> int:
+    """粗略估算 embedding token，用于上传向量化和检索向量化的额度扣减。"""
     return max(1, sum(len(text or "") for text in texts) // 2)
 
 
 def get_embedding_gateway() -> EmbeddingGateway:
     return EmbeddingGateway()
-

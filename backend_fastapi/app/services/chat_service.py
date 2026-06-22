@@ -12,6 +12,7 @@ from app.services.user_service import consume_user_tokens
 
 
 def create_session(db: Session, user: User, title: str | None = None) -> dict:
+    """创建逻辑会话，conversationId 用于前端在多轮对话间切换上下文。"""
     conversation_id = str(uuid4())
     session = ConversationSession(user_id=user.id, conversation_id=conversation_id, title=title or "新会话", status="ACTIVE")
     db.add(session)
@@ -21,6 +22,7 @@ def create_session(db: Session, user: User, title: str | None = None) -> dict:
 
 
 def get_or_create_session(db: Session, user: User, conversation_id: str | None = None, title: str | None = None) -> ConversationSession:
+    """优先复用用户已有会话；未传或不存在时创建新会话。"""
     if conversation_id:
         session = db.scalar(select(ConversationSession).where(ConversationSession.user_id == user.id, ConversationSession.conversation_id == conversation_id))
         if session:
@@ -35,6 +37,7 @@ def list_sessions(db: Session, user: User) -> list[dict]:
 
 
 def conversation_history(db: Session, user: User, conversation_id: str | None = None) -> list[dict]:
+    """读取持久化对话历史，返回引用映射以支持前端历史页回显来源。"""
     stmt = select(Conversation).where(Conversation.user_id == user.id)
     if conversation_id:
         stmt = stmt.where(Conversation.conversation_id == conversation_id)
@@ -60,6 +63,7 @@ def set_session_status(db: Session, user: User, conversation_id: str, status: st
 
 
 def generate_answer(db: Session, user: User, question: str, conversation_id: str | None = None) -> dict:
+    """非 WebSocket 场景的一次性生成入口，复用同一套检索、计费和持久化流程。"""
     generation, refs = start_generation(db, user, question, conversation_id)
     answer = get_llm_gateway().generate(question, refs)
     append_generation_content(db, generation.generation_id, answer)
@@ -67,6 +71,7 @@ def generate_answer(db: Session, user: User, question: str, conversation_id: str
 
 
 def start_generation(db: Session, user: User, question: str, conversation_id: str | None = None) -> tuple[Generation, list[dict]]:
+    """启动生成任务：先检索知识库引用，再创建 STREAMING 状态的生成快照。"""
     session = get_or_create_session(db, user, conversation_id, question[:30] or "新会话")
     refs = search_documents(db, user, question, 3)
     generation = Generation(
@@ -85,6 +90,10 @@ def start_generation(db: Session, user: User, question: str, conversation_id: st
 
 
 def append_generation_content(db: Session, generation_id: str, chunk: str) -> dict:
+    """追加流式增量内容。
+
+    每个 delta 都写入 MySQL，使刷新页面或断线重连后仍能恢复当前生成内容。
+    """
     generation = db.get(Generation, generation_id)
     if not generation:
         raise ValueError("generation not found")
@@ -97,6 +106,7 @@ def append_generation_content(db: Session, generation_id: str, chunk: str) -> di
 
 
 def complete_generation(db: Session, user: User, generation_id: str) -> dict:
+    """完成生成任务并落一条正式对话历史，同时按最终问答内容扣减 LLM token。"""
     generation = db.get(Generation, generation_id)
     if not generation or generation.user_id != user.id:
         raise ValueError("generation not found")
@@ -127,6 +137,7 @@ def get_generation(db: Session, user: User, generation_id: str) -> dict | None:
 
 
 def cancel_generation(db: Session, user: User, generation_id: str) -> dict | None:
+    """将生成任务标记为 CANCELLED，供 WebSocket 流式循环停止后续输出。"""
     row = db.get(Generation, generation_id)
     if not row or row.user_id != user.id:
         return None

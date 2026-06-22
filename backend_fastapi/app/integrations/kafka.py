@@ -7,11 +7,14 @@ from app.core.config import settings
 
 
 class KafkaTaskPublisher:
+    """文件处理任务发布器，封装 aiokafka 细节，业务层只关心任务 payload。"""
+
     def __init__(self, bootstrap_servers: str | None = None, topic: str | None = None):
         self.bootstrap_servers = bootstrap_servers or settings.kafka_bootstrap_servers
         self.topic = topic or settings.file_processing_topic
 
     async def publish_async(self, payload: dict) -> None:
+        """异步发送任务消息；调用方负责保证 payload 字段与 FileProcessingTask 契约一致。"""
         producer = AIOKafkaProducer(bootstrap_servers=self.bootstrap_servers)
         await producer.start()
         try:
@@ -26,4 +29,3 @@ class KafkaTaskPublisher:
 
 def get_task_publisher() -> KafkaTaskPublisher:
     return KafkaTaskPublisher()
-

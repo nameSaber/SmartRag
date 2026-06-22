@@ -31,6 +31,7 @@ def _user_orgs(user: User) -> set[str]:
 
 
 def assert_org_access(user: User, org_tag: str) -> None:
+    """校验用户是否拥有某个组织标签，所有文档读写入口都应先走这层多租户保护。"""
     if org_tag not in _user_orgs(user):
         raise BizError("无权访问该组织数据", 403)
 
@@ -47,6 +48,10 @@ def save_chunk(
     org_tag: str | None,
     is_public: bool,
 ) -> dict:
+    """保存上传分片。
+
+    数据库存分片元数据；当启用 MinIO 时，真实二进制内容写入对象存储，数据库只保留空占位以降低表体积。
+    """
     org = org_tag or user.primary_org
     assert_org_access(user, org)
     task = db.scalar(select(UploadTask).where(UploadTask.file_md5 == file_md5))
@@ -79,6 +84,7 @@ def save_chunk(
 
 
 def upload_status(db: Session, user: User, file_md5: str) -> dict:
+    """返回文件上传任务当前状态，包含已上传分片和前端进度条所需百分比。"""
     task = db.scalar(select(UploadTask).where(UploadTask.file_md5 == file_md5))
     if not task:
         return {"fileMd5": file_md5, "uploadedChunks": [], "progress": 0, "status": 0}
@@ -90,6 +96,10 @@ def upload_status(db: Session, user: User, file_md5: str) -> dict:
 
 
 def merge_file(db: Session, user: User, file_md5: str, file_name: str, total_chunks: int, total_size: int, org_tag: str | None, is_public: bool) -> dict:
+    """合并分片并生成文档主记录。
+
+    本地处理模式会立即解析、切块、向量化；Kafka 模式只发布处理任务，消费者异步完成索引。
+    """
     org = org_tag or user.primary_org
     assert_org_access(user, org)
     task = db.scalar(select(UploadTask).where(UploadTask.file_md5 == file_md5))
@@ -140,6 +150,7 @@ def merge_file(db: Session, user: User, file_md5: str, file_name: str, total_chu
 
 
 def read_document_bytes(doc: Document) -> bytes:
+    """按当前存储后端读取文档原始字节，供下载、预览和重新处理复用。"""
     if settings.object_storage_backend == "minio":
         return get_object_storage().get_bytes(doc.object_key)
     return doc.content.encode("utf-8")
@@ -152,6 +163,10 @@ def _read_chunk_bytes(chunk: UploadChunk) -> bytes:
 
 
 def rebuild_document_index(db: Session, document: Document, user: User) -> list[dict]:
+    """重建单个文档的向量与检索索引。
+
+    该方法会先清理旧 chunk，再重新生成 embedding、扣减 embedding token，并同步写入 ES。
+    """
     db.query(DocumentChunk).filter(DocumentChunk.file_md5 == document.file_md5).delete()
     indexed_chunks = _build_index_chunks(document)
     texts = [item["textContent"] for item in indexed_chunks]
@@ -200,6 +215,7 @@ def _build_index_chunks(document: Document) -> list[dict]:
 
 
 def _structured_segments(content: str) -> list[dict]:
+    """把解析器输出的结构化标记恢复成带页码和 anchor 的文本段。"""
     matches = list(ANCHOR_PATTERN.finditer(content))
     if not matches:
         return [{"text": content, "pageNumber": 1, "anchorText": "document-start"}]
@@ -215,6 +231,7 @@ def _structured_segments(content: str) -> list[dict]:
 
 
 def _file_processing_payload(document: Document, requester_id: int, task_type: str) -> dict:
+    """构造 Kafka 文件处理任务消息，字段名保持与技术文档中的 FileProcessingTask 对齐。"""
     return {
         "fileMd5": document.file_md5,
         "filePath": document.object_key,
@@ -228,6 +245,7 @@ def _file_processing_payload(document: Document, requester_id: int, task_type: s
 
 
 def accessible_documents(db: Session, user: User) -> list[dict]:
+    """列出当前用户可见文档：本人文档、公开文档、同组织文档。"""
     orgs = _user_orgs(user)
     docs = db.scalars(
         select(Document).where(
@@ -239,6 +257,7 @@ def accessible_documents(db: Session, user: User) -> list[dict]:
 
 
 def get_document_for_user(db: Session, user: User, file_md5: str) -> Document:
+    """按 fileMd5 获取文档并执行组织/公开性权限校验。"""
     doc = db.scalar(select(Document).where(Document.file_md5 == file_md5, Document.deleted.is_(False)))
     if not doc:
         raise BizError("文档不存在", 404)
@@ -248,6 +267,10 @@ def get_document_for_user(db: Session, user: User, file_md5: str) -> Document:
 
 
 def search_documents(db: Session, user: User, query: str, top_k: int) -> list[dict]:
+    """执行知识库检索。
+
+    Elasticsearch 模式会先生成查询向量做混合检索；数据库模式保留关键词 contains 作为测试和本地兜底。
+    """
     orgs = _user_orgs(user)
     if settings.search_backend == "elasticsearch":
         query_vector = get_embedding_gateway().embed_texts([query])[0]

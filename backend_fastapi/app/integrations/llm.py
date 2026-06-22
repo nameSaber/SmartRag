@@ -7,6 +7,11 @@ from app.core.config import settings
 
 
 class LlmGateway:
+    """LLM 统一网关。
+
+    对业务层隐藏 DeepSeek/OpenAI-compatible 与 mock 后端差异，保证聊天服务只依赖 generate/stream 两种能力。
+    """
+
     def generate(self, question: str, references: list[dict]) -> str:
         if settings.llm_backend == "openai_compatible":
             return self._generate_openai_compatible(question, references)
@@ -34,6 +39,7 @@ class LlmGateway:
         return f"已收到问题：{question}"
 
     def _build_payload(self, question: str, references: list[dict], stream: bool) -> dict:
+        """构造 RAG 问答请求体，把检索引用压入 user prompt 并保留统一系统提示词。"""
         reference_text = "\n".join(item.get("matchedChunkText", "") for item in references[:5])
         return {
             "model": settings.llm_model_name,
@@ -71,6 +77,7 @@ class LlmGateway:
 
 
 def parse_openai_sse_line(line: str) -> str | None:
+    """解析 OpenAI-compatible SSE 单行数据，只返回本次 delta 中新增的正文片段。"""
     if not line or not line.startswith("data:"):
         return None
     data = line.removeprefix("data:").strip()
@@ -89,4 +96,3 @@ def estimate_tokens(*texts: str) -> int:
 
 def get_llm_gateway() -> LlmGateway:
     return LlmGateway()
-

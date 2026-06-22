@@ -19,6 +19,7 @@ def list_users(db: Session) -> list[dict]:
 
 
 def create_admin_user(db: Session, username: str, password_hash: str) -> dict:
+    """创建管理员账号，供系统初始化后由已有管理员扩展后台用户。"""
     if db.scalar(select(User).where(User.username == username)):
         raise BizError("用户名已存在", 400)
     user = User(username=username, password_hash=password_hash, role="ADMIN", primary_org="default")
@@ -29,6 +30,7 @@ def create_admin_user(db: Session, username: str, password_hash: str) -> dict:
 
 
 def upsert_org_tag(db: Session, tag_id: str, name: str, description: str, parent_tag: str | None, upload_max_size_bytes: int) -> dict:
+    """创建或更新组织标签，组织标签是文档权限隔离的核心维度。"""
     org = db.get(OrgTag, tag_id)
     if not org:
         org = OrgTag(tag_id=tag_id, name=name, description=description, parent_tag=parent_tag, upload_max_size_bytes=upload_max_size_bytes)
@@ -54,6 +56,7 @@ def serialize_org_tag(org: OrgTag) -> dict:
 
 
 def build_org_tree(orgs: list[OrgTag]) -> list[dict]:
+    """将平铺组织标签组装成前端树结构。"""
     nodes = [{**serialize_org_tag(org), "children": []} for org in orgs]
     node_by_id = {node["tagId"]: node for node in nodes}
     roots: list[dict] = []
@@ -89,6 +92,7 @@ def serialize_invite_code(row: InviteCode) -> dict:
 
 
 def upsert_rate_limit(db: Session, key: str, payload, admin_user: User) -> dict:
+    """更新限流配置，updated_by 用于追踪最后一次调整该策略的管理员。"""
     row = db.get(RateLimitConfig, key)
     if not row:
         row = RateLimitConfig(config_key=key)
@@ -105,6 +109,10 @@ def upsert_rate_limit(db: Session, key: str, payload, admin_user: User) -> dict:
 
 
 def upsert_model_provider(db: Session, payload, admin_user: User) -> dict:
+    """保存模型供应商配置。
+
+    同一 scope 只能有一个 active provider；新的 active 配置会自动关闭同 scope 其他配置。
+    """
     row = db.scalar(select(ModelProviderConfig).where(ModelProviderConfig.scope == payload.scope, ModelProviderConfig.provider_code == payload.provider))
     if not row:
         row = ModelProviderConfig(scope=payload.scope, provider_code=payload.provider, display_name=payload.displayName)
@@ -143,6 +151,7 @@ def serialize_model_provider(row: ModelProviderConfig) -> dict:
 
 
 def assign_user_orgs(db: Session, user_id: int, org_tags: list[str], primary_org: str) -> None:
+    """为用户重新分配组织标签，并校验主组织必须在授权范围内。"""
     user = db.get(User, user_id)
     if not user:
         raise BizError("用户不存在", 404)
@@ -160,6 +169,7 @@ def assign_user_orgs(db: Session, user_id: int, org_tags: list[str], primary_org
 
 
 def write_audit_log(db: Session, actor: User | None, action: str, target_type: str, target_id: str = "", detail: str = "") -> None:
+    """记录后台高危或运维操作审计日志，调用方负责在同一事务中提交。"""
     db.add(AuditLog(actor_user_id=actor.id if actor else None, action=action, target_type=target_type, target_id=target_id, detail=detail))
     db.flush()
 
@@ -197,6 +207,7 @@ def list_admin_conversations(db: Session) -> list[dict]:
 
 
 def migrate_documents_to_minio(db: Session, actor: User) -> dict:
+    """把旧版本存于数据库的文档正文补写入 MinIO，用于平滑迁移对象存储。"""
     storage = get_object_storage()
     migrated = 0
     for doc in db.scalars(select(Document).where(Document.deleted.is_(False))).all():
@@ -210,6 +221,7 @@ def migrate_documents_to_minio(db: Session, actor: User) -> dict:
 
 
 def cleanup_all_data(db: Session, actor: User, confirm_text: str) -> dict:
+    """清理核心业务数据；该方法只允许在显式开启高危开关后执行。"""
     if not settings.admin_dangerous_operations_enabled:
         raise BizError("高危操作未启用", 403)
     if confirm_text != "CONFIRM_CLEANUP_ALL":
@@ -226,6 +238,7 @@ def cleanup_all_data(db: Session, actor: User, confirm_text: str) -> dict:
 
 
 def grant_tokens(db: Session, user_id: int, token_type: str, amount: int, reason: str) -> None:
+    """管理员增发用户 token，并写入余额变更账本。"""
     user = db.get(User, user_id)
     if not user:
         raise BizError("用户不存在", 404)

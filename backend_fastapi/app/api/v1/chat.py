@@ -26,12 +26,14 @@ ws_router = APIRouter()
 
 @router.get("/websocket-token")
 def websocket_token(current_user: User = Depends(get_current_user)):
+    """签发短期指令 token，用于 WebSocket 停止生成等控制消息鉴权。"""
     cmd_token = create_token(str(current_user.id), "access", current_user.token_version, __import__("datetime").timedelta(minutes=10))
     return ok({"cmdToken": cmd_token})
 
 
 @router.get("/generation/{generationId}")
 def generation_snapshot(generationId: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """读取某次生成任务快照，前端可用它恢复刷新后的生成状态。"""
     snapshot = get_generation(db, current_user, generationId)
     if snapshot is None:
         raise BizError("生成任务不存在", 404)
@@ -40,17 +42,20 @@ def generation_snapshot(generationId: str, current_user: User = Depends(get_curr
 
 @router.get("/active-generation")
 def active(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """返回当前用户最近一条流式生成中的任务；没有活动任务时返回 null。"""
     return ok(active_generation(db, current_user))
 
 
 @router.post("/feedback")
 def feedback(payload: FeedbackRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """保存用户对回答的好评/差评反馈，用于后续运营分析。"""
     save_feedback(db, current_user, payload.rating, payload.reason, payload.conversationId, payload.generationId)
     return ok(None)
 
 
 @ws_router.websocket("/chat/{token}")
 async def websocket_chat(websocket: WebSocket, token: str):
+    """聊天 WebSocket 主循环：鉴权、限流、检索、流式生成和生成状态持久化都在这里串起来。"""
     await websocket.accept()
     db = SessionLocal()
     try:
@@ -67,6 +72,7 @@ async def websocket_chat(websocket: WebSocket, token: str):
                 await websocket.send_json({"type": "pong"})
                 continue
             if message.get("type") == "cancel":
+                # 取消只改变持久化状态，真正的流式循环会在下一次写入后感知并停止。
                 generation_id = message.get("generationId")
                 snapshot = cancel_generation(db, user, generation_id) if generation_id else None
                 await websocket.send_json({"type": "cancelled", "data": snapshot})

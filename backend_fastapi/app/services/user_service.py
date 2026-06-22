@@ -10,6 +10,7 @@ from app.models.user import OrgTag, User, UserOrgTag, UserTokenRecord
 
 
 def ensure_default_org(db: Session) -> OrgTag:
+    """确保系统默认组织存在，新用户注册会自动绑定该组织。"""
     org = db.get(OrgTag, settings.default_org_tag)
     if org:
         return org
@@ -33,12 +34,14 @@ def serialize_user(user: User) -> dict:
 
 
 def issue_tokens(user: User) -> dict:
+    """签发 access token 与 refresh token，tokenVersion 用于登出全部设备后整体失效。"""
     token = create_token(str(user.id), "access", user.token_version, timedelta(minutes=settings.access_token_minutes))
     refresh_token = create_token(str(user.id), "refresh", user.token_version, timedelta(days=settings.refresh_token_days))
     return {"token": token, "refreshToken": refresh_token}
 
 
 def register_user(db: Session, username: str, password: str, invite_code: str | None = None) -> None:
+    """注册普通用户，并初始化组织标签和 LLM/Embedding 两类 token 额度。"""
     mode = settings.registration_mode.upper()
     if mode == "CLOSED":
         raise BizError("注册已关闭", 400)
@@ -79,6 +82,7 @@ def _record_initial_tokens(db: Session, user: User, token_type: str, amount: int
 
 
 def consume_user_tokens(db: Session, user: User, token_type: str, amount: int, reason: str, remark: str = "") -> None:
+    """扣减用户 token 余额并写入账本，所有 LLM/Embedding 消耗都应通过这里记录。"""
     if token_type == "LLM":
         before = user.llm_token_balance
         if before < amount:
@@ -130,6 +134,7 @@ def get_org_info(db: Session, user: User) -> dict:
 
 
 def set_primary_org(db: Session, user: User, primary_org: str) -> None:
+    """切换用户主组织，上传文件未显式指定 orgTag 时会默认使用它。"""
     owned = {item.tag_id for item in user.org_tags}
     if primary_org not in owned:
         raise BizError("主组织必须属于当前用户已绑定的组织", 400)

@@ -56,11 +56,13 @@ def admins(payload: RegisterRequest, _: User = Depends(require_admin), db: Sessi
 
 @router.get("/status")
 def status(_: User = Depends(require_admin)):
+    """聚合外部依赖健康状态，供管理后台运维面板展示。"""
     return ok(dependency_health())
 
 
 @router.get("/usage-overview")
 def usage_overview(_: User = Depends(require_admin)):
+    """返回用量总览骨架，后续可接入按日统计与排行数据。"""
     return ok({"days": 7, "today": {}, "trends": [], "llmRankings": [], "embeddingRankings": [], "alerts": []})
 
 
@@ -81,6 +83,7 @@ def org_tags(_: User = Depends(require_admin), db: Session = Depends(get_db)):
 
 @router.get("/org-tags/tree")
 def org_tag_tree(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """返回组织标签树，兼容前端组织管理树形控件的 children 字段。"""
     orgs = db.scalars(select(OrgTag).order_by(OrgTag.tag_id)).all()
     return ok(build_org_tree(orgs))
 
@@ -97,6 +100,7 @@ def update_org_tag(tagId: str, payload: OrgTagUpsertRequest, _: User = Depends(r
 
 @router.get("/rate-limits")
 def rate_limits(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """读取限流配置；缺失默认项会自动补齐，避免新部署后台页面空白。"""
     keys = ["chatMessage", "llmGlobalToken", "embeddingUploadToken", "embeddingQueryRequest", "embeddingQueryGlobalToken"]
     for key in keys:
         if not db.get(RateLimitConfig, key):
@@ -128,6 +132,7 @@ def update_invite_code(code: str, payload: InviteCodeRequest, current_user: User
 
 @router.get("/model-providers")
 def model_providers(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """读取 LLM 与 Embedding 供应商配置，返回按 scope 分组的前端兼容结构。"""
     return ok(model_provider_settings(db))
 
 
@@ -144,11 +149,13 @@ def assign_orgs(payload: UserOrgAssignRequest, _: User = Depends(require_admin),
 
 @router.post("/minio/migrate")
 def minio_migrate(current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """将数据库内已有文档内容迁移到 MinIO，属于需要审计的运维操作。"""
     return ok(migrate_documents_to_minio(db, current_user))
 
 
 @router.post("/system/cleanup-all")
 def cleanup_all(payload: CleanupAllRequest, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """高危清理入口：必须同时满足管理员、环境开关和确认文本。"""
     return ok(cleanup_all_data(db, current_user, payload.confirmText))
 
 
