@@ -9,7 +9,15 @@ from app.core.security import create_token, decode_token
 from app.models.user import User
 from app.schemas.chat import FeedbackRequest
 from app.integrations.llm import get_llm_gateway
-from app.services.chat_service import active_generation, cancel_generation, generate_answer, get_generation, save_feedback
+from app.services.chat_service import (
+    active_generation,
+    append_generation_content,
+    cancel_generation,
+    complete_generation,
+    get_generation,
+    save_feedback,
+    start_generation,
+)
 from app.services.rate_limiter import enforce_rate_limit
 
 router = APIRouter()
@@ -65,11 +73,16 @@ async def websocket_chat(websocket: WebSocket, token: str):
                 continue
             question = message.get("message") or message.get("question") or ""
             enforce_rate_limit(db, "chatMessage", str(user.id))
-            snapshot = generate_answer(db, user, question, message.get("conversationId"))
+            generation, refs = start_generation(db, user, question, message.get("conversationId"))
+            snapshot = get_generation(db, user, generation.generation_id)
             await websocket.send_json({"type": "generation", "data": snapshot})
-            for chunk in get_llm_gateway().stream_text(snapshot["content"]):
-                await websocket.send_json({"type": "delta", "generationId": snapshot["generationId"], "content": chunk})
-            await websocket.send_json({"type": "done", "generationId": snapshot["generationId"]})
+            for chunk in get_llm_gateway().stream(question, refs):
+                persisted = append_generation_content(db, generation.generation_id, chunk)
+                await websocket.send_json({"type": "delta", "generationId": generation.generation_id, "content": chunk})
+                if persisted["status"] == "CANCELLED":
+                    break
+            done = complete_generation(db, user, generation.generation_id)
+            await websocket.send_json({"type": "done", "generationId": generation.generation_id, "data": done})
     except WebSocketDisconnect:
         return
     finally:

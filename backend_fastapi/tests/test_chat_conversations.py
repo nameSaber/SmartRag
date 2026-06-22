@@ -25,7 +25,10 @@ def test_conversation_generation_feedback_and_websocket(client):
             event = websocket.receive_json()
             if event["type"] == "delta":
                 seen_delta = True
+                assert event["content"]
             if event["type"] == "done":
+                assert event["data"]["status"] == "COMPLETED"
+                assert event["data"]["content"]
                 break
         assert seen_delta is True
         websocket.send_json({"type": "cancel", "generationId": generation_id})

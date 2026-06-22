@@ -4,9 +4,9 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.integrations.llm import estimate_tokens, get_llm_gateway
 from app.models.chat import ChatFeedback, Conversation, ConversationSession, Generation
 from app.models.user import User
-from app.integrations.llm import estimate_tokens, get_llm_gateway
 from app.services.document_service import search_documents
 from app.services.user_service import consume_user_tokens
 
@@ -60,30 +60,58 @@ def set_session_status(db: Session, user: User, conversation_id: str, status: st
 
 
 def generate_answer(db: Session, user: User, question: str, conversation_id: str | None = None) -> dict:
+    generation, refs = start_generation(db, user, question, conversation_id)
+    answer = get_llm_gateway().generate(question, refs)
+    append_generation_content(db, generation.generation_id, answer)
+    return complete_generation(db, user, generation.generation_id)
+
+
+def start_generation(db: Session, user: User, question: str, conversation_id: str | None = None) -> tuple[Generation, list[dict]]:
     session = get_or_create_session(db, user, conversation_id, question[:30] or "新会话")
     refs = search_documents(db, user, question, 3)
-    generation_id = str(uuid4())
-    answer = get_llm_gateway().generate(question, refs)
-    consumed_tokens = estimate_tokens(question, answer)
-    consume_user_tokens(db, user, "LLM", consumed_tokens, "对话消费", generation_id)
-    ref_json = json.dumps(refs, ensure_ascii=False)
     generation = Generation(
-        generation_id=generation_id,
+        generation_id=str(uuid4()),
         user_id=user.id,
         conversation_id=session.conversation_id,
         question=question,
-        status="COMPLETED",
-        content=answer,
-        reference_mappings_json=ref_json,
+        status="STREAMING",
+        content="",
+        reference_mappings_json=json.dumps(refs, ensure_ascii=False),
     )
     db.add(generation)
+    db.commit()
+    db.refresh(generation)
+    return generation, refs
+
+
+def append_generation_content(db: Session, generation_id: str, chunk: str) -> dict:
+    generation = db.get(Generation, generation_id)
+    if not generation:
+        raise ValueError("generation not found")
+    if generation.status == "CANCELLED":
+        return serialize_generation(generation)
+    generation.content = (generation.content or "") + chunk
+    db.commit()
+    db.refresh(generation)
+    return serialize_generation(generation)
+
+
+def complete_generation(db: Session, user: User, generation_id: str) -> dict:
+    generation = db.get(Generation, generation_id)
+    if not generation or generation.user_id != user.id:
+        raise ValueError("generation not found")
+    if generation.status == "CANCELLED":
+        return serialize_generation(generation)
+    refs = json.loads(generation.reference_mappings_json)
+    consume_user_tokens(db, user, "LLM", estimate_tokens(generation.question, generation.content), "对话消费", generation_id)
+    generation.status = "COMPLETED"
     db.add(
         Conversation(
             user_id=user.id,
-            question=question,
-            answer=answer,
-            conversation_id=session.conversation_id,
-            reference_mappings_json=ref_json,
+            question=generation.question,
+            answer=generation.content,
+            conversation_id=generation.conversation_id,
+            reference_mappings_json=json.dumps(refs, ensure_ascii=False),
         )
     )
     db.commit()
@@ -102,10 +130,7 @@ def cancel_generation(db: Session, user: User, generation_id: str) -> dict | Non
     row = db.get(Generation, generation_id)
     if not row or row.user_id != user.id:
         return None
-    if row.status not in {"COMPLETED", "FAILED"}:
-        row.status = "CANCELLED"
-    else:
-        row.status = "CANCELLED"
+    row.status = "CANCELLED"
     db.commit()
     db.refresh(row)
     return serialize_generation(row)
