@@ -172,6 +172,8 @@ curl http://localhost:8000/health/dependencies
 - 若启用 `OBJECT_STORAGE_BACKEND=minio`，请确保 MinIO 可访问且账号密码正确。
 - 若启用 `SEARCH_BACKEND=elasticsearch`，请确保 Elasticsearch 已启动并允许当前服务连接。
 - LLM 已按 DeepSeek OpenAI-compatible API 配置，部署前必须设置 `LLM_API_KEY` 或宿主环境变量 `DEEPSEEK_API_KEY`。
+- 上传解析支持 TXT、Markdown、PDF、DOCX；PDF/DOCX 解析依赖已随后端镜像安装。
+- Elasticsearch 检索会使用查询 embedding 参与混合排序，并消耗 Embedding token。
 - 当前微信支付回调使用 HMAC 验签占位实现，接入真实微信平台证书时需要替换验签逻辑。
 - `ADMIN_DANGEROUS_OPERATIONS_ENABLED` 默认必须保持 `false`，仅在明确维护窗口中临时开启。
 - `FILE_PROCESSING_BACKEND=kafka` 时，上传合并后会发布文件处理任务，需要单独运行消费者进程接收 Kafka 消息并调用文件处理任务：
