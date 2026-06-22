@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import require_admin
 from app.core.responses import ok
+from app.integrations.health import dependency_health
 from app.core.security import hash_password
 from app.models.admin import RateLimitConfig
 from app.models.user import OrgTag, User
@@ -27,7 +28,7 @@ def admins(payload: RegisterRequest, _: User = Depends(require_admin), db: Sessi
 
 @router.get("/status")
 def status(_: User = Depends(require_admin)):
-    return ok({"status": "UP", "database": "UP"})
+    return ok(dependency_health())
 
 
 @router.get("/usage-overview")
@@ -87,4 +88,3 @@ def admin_create_package(payload: RechargePackageRequest, _: User = Depends(requ
             sort_order=payload.sortOrder,
         )
     )
-

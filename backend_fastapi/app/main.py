@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.database import create_schema
 from app.core.exceptions import register_exception_handlers
 from app.core.responses import ok
+from app.integrations.health import dependency_health
 
 
 @asynccontextmanager
@@ -27,6 +28,10 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health_check():
         return ok({"status": "UP"})
+
+    @app.get("/health/dependencies")
+    def dependency_health_check():
+        return ok(dependency_health())
 
     return app
 

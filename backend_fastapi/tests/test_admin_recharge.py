@@ -26,7 +26,8 @@ def test_admin_org_token_grant_and_recharge_callback(client):
 
     status = client.get("/api/v1/admin/status", headers=admin_headers).json()
     assert status["code"] == 200
-    assert status["data"]["status"] == "UP"
+    assert status["data"]["status"] in {"UP", "DEGRADED"}
+    assert "dependencies" in status["data"]
 
     users = client.get("/api/v1/admin/users", headers=admin_headers).json()
     assert users["code"] == 200
