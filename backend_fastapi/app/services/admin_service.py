@@ -53,6 +53,20 @@ def serialize_org_tag(org: OrgTag) -> dict:
     }
 
 
+def build_org_tree(orgs: list[OrgTag]) -> list[dict]:
+    nodes = [{**serialize_org_tag(org), "children": []} for org in orgs]
+    node_by_id = {node["tagId"]: node for node in nodes}
+    roots: list[dict] = []
+    for org, node in zip(orgs, nodes):
+        parent = node_by_id.get(org.parent_tag or "")
+        # 父级不存在时作为根节点返回，避免脏数据导致组织树整支丢失。
+        if parent:
+            parent["children"].append(node)
+        else:
+            roots.append(node)
+    return roots
+
+
 def list_invite_codes(db: Session) -> list[dict]:
     return [serialize_invite_code(row) for row in db.scalars(select(InviteCode).order_by(InviteCode.id.desc())).all()]
 

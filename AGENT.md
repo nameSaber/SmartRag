@@ -90,8 +90,10 @@
 - 已完成并推送 Elasticsearch 关键词 + 向量混合检索，并记录查询 embedding token 消耗。
 - 已完成 Docker 端到端联调修复：补充 MySQL 8 PyMySQL 认证依赖 `cryptography`，Docker 部署连接串改为专用 MySQL 应用用户 `smart_rag`，并将 Kafka 文件处理消费者改为 `consumer` profile 手动启用，避免默认 API 部署被 Kafka advertised listener 配置影响。
 - 已完成 Docker API 端到端验证：`docker compose up -d --force-recreate api` 后，`/health/dependencies` 返回 MySQL/Redis/Elasticsearch/Kafka/MinIO 全部 `UP`，并通过真实 Docker 服务完成注册、登录、`/api/v1/users/me` 闭环。
+- 已验证 Kafka 消费者在当前基础设施 compose 下仍被 `KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092` 阻塞；容器内消费者会读取 metadata 后连接自身 `localhost:9092`，日志为 `No connection to node with id 0`。需先把基础设施 Kafka advertised listener 调整为容器可访问地址，例如 `PLAINTEXT://kafka:9092`。
+- 已完成并测试通过管理后台组织树接口：`GET /api/v1/admin/org-tags/tree`，返回兼容 `OrgTag.Item.children` 的树结构。
 - 当前测试命令：在 `backend_fastapi/` 执行 `python -m pytest -q`。
-- 最近一次结果：`30 passed`。
+- 最近一次结果：`31 passed`。
 
 ## 后续优先级
 

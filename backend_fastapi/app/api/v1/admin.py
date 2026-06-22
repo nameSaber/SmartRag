@@ -22,6 +22,7 @@ from app.schemas.admin import (
 from app.schemas.user import RegisterRequest
 from app.services.admin_service import (
     assign_user_orgs,
+    build_org_tree,
     create_admin_user,
     create_package,
     grant_tokens,
@@ -76,6 +77,12 @@ def admin_conversations(_: User = Depends(require_admin), db: Session = Depends(
 @router.get("/org-tags")
 def org_tags(_: User = Depends(require_admin), db: Session = Depends(get_db)):
     return ok([serialize_org_tag(org) for org in db.scalars(select(OrgTag).order_by(OrgTag.tag_id)).all()])
+
+
+@router.get("/org-tags/tree")
+def org_tag_tree(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    orgs = db.scalars(select(OrgTag).order_by(OrgTag.tag_id)).all()
+    return ok(build_org_tree(orgs))
 
 
 @router.post("/org-tags")

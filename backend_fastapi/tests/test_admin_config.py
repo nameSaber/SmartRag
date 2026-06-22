@@ -48,3 +48,21 @@ def test_admin_invite_rate_model_and_user_org_assignment(client):
     settings = client.get("/api/v1/admin/model-providers", headers=admin_headers).json()
     assert settings["data"]["llm"]["activeProvider"] == "mock"
 
+
+def test_admin_org_tag_tree(client):
+    admin_headers = _login(client, "tree-admin")
+    _make_admin("tree-admin")
+
+    client.post("/api/v1/admin/org-tags", headers=admin_headers, json={"tagId": "company", "name": "公司"})
+    client.post(
+        "/api/v1/admin/org-tags",
+        headers=admin_headers,
+        json={"tagId": "rd-child", "name": "研发组", "parentTag": "company"},
+    )
+
+    result = client.get("/api/v1/admin/org-tags/tree", headers=admin_headers).json()
+
+    assert result["code"] == 200
+    company = next(item for item in result["data"] if item["tagId"] == "company")
+    assert company["children"][0]["tagId"] == "rd-child"
+    assert company["children"][0]["children"] == []

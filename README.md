@@ -217,4 +217,14 @@ python -m app.consumers.file_processing_consumer
 docker compose --profile consumer up -d --build file-consumer
 ```
 
-注意：如果 Kafka 在基础设施 compose 中把 advertised listener 配成 `localhost:9092`，容器内消费者会在读取 broker 元数据后连接到自身的 `localhost`，导致连接失败。此时请将 Kafka advertised listener 调整为容器可访问的主机名，或在宿主机直接运行消费者进程。
+注意：如果 Kafka 在基础设施 compose 中把 advertised listener 配成 `localhost:9092`，容器内消费者会在读取 broker 元数据后连接到自身的 `localhost`，导致连接失败。当前已确认该场景会使消费者报 `No connection to node with id 0`。此时请将 Kafka advertised listener 调整为容器可访问的主机名，例如 `PLAINTEXT://kafka:9092`，或在宿主机直接运行消费者进程。
+
+## 管理后台补充接口
+
+组织标签除平铺列表外，也提供树结构接口：
+
+```text
+GET /api/v1/admin/org-tags/tree
+```
+
+返回项兼容 `OrgTag.Item`，包含 `tagId`、`name`、`description`、`parentTag`、`uploadMaxSizeBytes`、`uploadMaxSizeMb` 和 `children`。
