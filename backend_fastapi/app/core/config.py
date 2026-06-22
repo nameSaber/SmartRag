@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     minio_secure: bool = False
     minio_bucket: str = "pai-smart"
     object_storage_backend: str = "database"
+    search_backend: str = "database"
+    es_index_name: str = "pai_smart_documents"
     default_org_tag: str = "default"
     default_org_name: str = "默认组织"
     initial_llm_tokens: int = 100000

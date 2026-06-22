@@ -21,5 +21,7 @@ services:
       MINIO_SECRET_KEY: PaiSmart2025
       MINIO_BUCKET: pai-smart
       OBJECT_STORAGE_BACKEND: minio
+      SEARCH_BACKEND: elasticsearch
+      ES_INDEX_NAME: pai_smart_documents
       REGISTRATION_MODE: OPEN
       AUTO_CREATE_SCHEMA: "false"

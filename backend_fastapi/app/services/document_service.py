@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BizError
 from app.core.config import settings
 from app.integrations.object_storage import chunk_key, document_key, get_object_storage
+from app.integrations.search_index import get_search_index
 from app.models.document import Document, DocumentChunk, UploadChunk, UploadTask
 from app.models.user import User
 
@@ -120,7 +121,9 @@ def merge_file(db: Session, user: User, file_md5: str, file_name: str, total_chu
     task.status = 1
     task.merged_at = datetime.utcnow()
     task.vectorization_status = "COMPLETED"
-    _rebuild_chunks(db, file_md5, text)
+    indexed_chunks = _rebuild_chunks(db, file_md5, text, file_name, user.id, org, is_public)
+    if settings.search_backend == "elasticsearch":
+        get_search_index().index_chunks(indexed_chunks)
     db.commit()
     return _serialize_document(document)
 
@@ -137,11 +140,26 @@ def _read_chunk_bytes(chunk: UploadChunk) -> bytes:
     return chunk.content
 
 
-def _rebuild_chunks(db: Session, file_md5: str, text: str) -> None:
+def _rebuild_chunks(db: Session, file_md5: str, text: str, file_name: str, user_id: int, org_tag: str, is_public: bool) -> list[dict]:
     # 这里先按固定窗口模拟解析切块，后续接入真实解析器和 Embedding 服务。
+    indexed_chunks = []
     for index, start in enumerate(range(0, max(len(text), 1), 800)):
         part = text[start : start + 800] or ""
         db.add(DocumentChunk(file_md5=file_md5, chunk_id=index, text_content=part, page_number=1, anchor_text=f"chunk-{index}"))
+        indexed_chunks.append(
+            {
+                "fileMd5": file_md5,
+                "chunkId": index,
+                "textContent": part,
+                "pageNumber": 1,
+                "anchorText": f"chunk-{index}",
+                "fileName": file_name,
+                "userId": user_id,
+                "orgTag": org_tag,
+                "isPublic": is_public,
+            }
+        )
+    return indexed_chunks
 
 
 def accessible_documents(db: Session, user: User) -> list[dict]:
@@ -166,6 +184,8 @@ def get_document_for_user(db: Session, user: User, file_md5: str) -> Document:
 
 def search_documents(db: Session, user: User, query: str, top_k: int) -> list[dict]:
     orgs = _user_orgs(user)
+    if settings.search_backend == "elasticsearch":
+        return get_search_index().search(query, user.id, list(orgs), top_k)
     rows = db.scalars(
         select(DocumentChunk)
         .join(Document, Document.file_md5 == DocumentChunk.file_md5)
