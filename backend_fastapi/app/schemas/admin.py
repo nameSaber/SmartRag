@@ -36,3 +36,36 @@ class PayCallbackRequest(BaseModel):
     transactionId: str | None = None
     status: str = "SUCCEED"
 
+
+class InviteCodeRequest(BaseModel):
+    code: str
+    maxUses: int = Field(default=1, ge=1)
+    enabled: bool = True
+
+
+class RateLimitConfigRequest(BaseModel):
+    singleMax: int = Field(default=60, ge=1)
+    singleWindowSeconds: int = Field(default=60, ge=1)
+    minuteMax: int = Field(default=60, ge=1)
+    minuteWindowSeconds: int = Field(default=60, ge=1)
+    dayMax: int = Field(default=1000, ge=1)
+    dayWindowSeconds: int = Field(default=86400, ge=1)
+
+
+class ModelProviderRequest(BaseModel):
+    scope: str = Field(pattern="^(llm|embedding)$")
+    provider: str
+    displayName: str
+    apiStyle: str = "openai"
+    apiBaseUrl: str = ""
+    model: str = ""
+    apiKey: str = ""
+    dimension: int | None = None
+    enabled: bool = True
+    active: bool = False
+
+
+class UserOrgAssignRequest(BaseModel):
+    userId: int
+    orgTags: list[str]
+    primaryOrg: str

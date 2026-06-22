@@ -9,9 +9,31 @@ from app.integrations.health import dependency_health
 from app.core.security import hash_password
 from app.models.admin import RateLimitConfig
 from app.models.user import OrgTag, User
-from app.schemas.admin import OrgTagUpsertRequest, RechargePackageRequest, TokenGrantRequest
+from app.schemas.admin import (
+    InviteCodeRequest,
+    ModelProviderRequest,
+    OrgTagUpsertRequest,
+    RateLimitConfigRequest,
+    RechargePackageRequest,
+    TokenGrantRequest,
+    UserOrgAssignRequest,
+)
 from app.schemas.user import RegisterRequest
-from app.services.admin_service import create_admin_user, create_package, grant_tokens, list_packages, list_users, serialize_org_tag, upsert_org_tag
+from app.services.admin_service import (
+    assign_user_orgs,
+    create_admin_user,
+    create_package,
+    grant_tokens,
+    list_invite_codes,
+    list_packages,
+    list_users,
+    model_provider_settings,
+    serialize_org_tag,
+    upsert_invite_code,
+    upsert_model_provider,
+    upsert_org_tag,
+    upsert_rate_limit,
+)
 
 router = APIRouter()
 
@@ -60,6 +82,42 @@ def rate_limits(_: User = Depends(require_admin), db: Session = Depends(get_db))
     db.commit()
     rows = db.scalars(select(RateLimitConfig)).all()
     return ok({row.config_key: {"singleMax": row.single_max, "minuteMax": row.minute_max, "dayMax": row.day_max} for row in rows})
+
+
+@router.put("/rate-limits/{configKey}")
+def update_rate_limit(configKey: str, payload: RateLimitConfigRequest, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(upsert_rate_limit(db, configKey, payload, current_user))
+
+
+@router.get("/invite-codes")
+def invite_codes(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(list_invite_codes(db))
+
+
+@router.post("/invite-codes")
+def create_invite_code(payload: InviteCodeRequest, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(upsert_invite_code(db, payload.code, payload.maxUses, payload.enabled, current_user))
+
+
+@router.put("/invite-codes/{code}")
+def update_invite_code(code: str, payload: InviteCodeRequest, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(upsert_invite_code(db, code, payload.maxUses, payload.enabled, current_user))
+
+
+@router.get("/model-providers")
+def model_providers(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(model_provider_settings(db))
+
+
+@router.put("/model-providers")
+def save_model_provider(payload: ModelProviderRequest, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(upsert_model_provider(db, payload, current_user))
+
+
+@router.put("/users/org-tags")
+def assign_orgs(payload: UserOrgAssignRequest, _: User = Depends(require_admin), db: Session = Depends(get_db)):
+    assign_user_orgs(db, payload.userId, payload.orgTags, payload.primaryOrg)
+    return ok(None)
 
 
 @router.post("/users/token-grant")

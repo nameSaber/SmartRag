@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BizError
-from app.models.admin import RechargeOrder, RechargePackage
+from app.models.admin import InviteCode, ModelProviderConfig, RateLimitConfig, RechargeOrder, RechargePackage
 from app.models.user import OrgTag, User, UserOrgTag, UserTokenRecord
 from app.services.user_service import serialize_user
 
@@ -47,6 +47,98 @@ def serialize_org_tag(org: OrgTag) -> dict:
         "uploadMaxSizeBytes": org.upload_max_size_bytes,
         "uploadMaxSizeMb": org.upload_max_size_bytes // 1024 // 1024,
     }
+
+
+def list_invite_codes(db: Session) -> list[dict]:
+    return [serialize_invite_code(row) for row in db.scalars(select(InviteCode).order_by(InviteCode.id.desc())).all()]
+
+
+def upsert_invite_code(db: Session, code: str, max_uses: int, enabled: bool, admin_user: User) -> dict:
+    row = db.scalar(select(InviteCode).where(InviteCode.code == code))
+    if not row:
+        row = InviteCode(code=code, max_uses=max_uses, enabled=enabled, created_by=admin_user.id)
+        db.add(row)
+    else:
+        row.max_uses = max_uses
+        row.enabled = enabled
+    db.commit()
+    db.refresh(row)
+    return serialize_invite_code(row)
+
+
+def serialize_invite_code(row: InviteCode) -> dict:
+    return {"id": row.id, "code": row.code, "maxUses": row.max_uses, "usedCount": row.used_count, "enabled": row.enabled, "expiresAt": row.expires_at.isoformat() if row.expires_at else None}
+
+
+def upsert_rate_limit(db: Session, key: str, payload, admin_user: User) -> dict:
+    row = db.get(RateLimitConfig, key)
+    if not row:
+        row = RateLimitConfig(config_key=key)
+        db.add(row)
+    row.single_max = payload.singleMax
+    row.single_window_seconds = payload.singleWindowSeconds
+    row.minute_max = payload.minuteMax
+    row.minute_window_seconds = payload.minuteWindowSeconds
+    row.day_max = payload.dayMax
+    row.day_window_seconds = payload.dayWindowSeconds
+    row.updated_by = admin_user.id
+    db.commit()
+    return {"configKey": row.config_key, "singleMax": row.single_max, "minuteMax": row.minute_max, "dayMax": row.day_max}
+
+
+def upsert_model_provider(db: Session, payload, admin_user: User) -> dict:
+    row = db.scalar(select(ModelProviderConfig).where(ModelProviderConfig.scope == payload.scope, ModelProviderConfig.provider_code == payload.provider))
+    if not row:
+        row = ModelProviderConfig(scope=payload.scope, provider_code=payload.provider, display_name=payload.displayName)
+        db.add(row)
+    row.display_name = payload.displayName
+    row.api_style = payload.apiStyle
+    row.api_base_url = payload.apiBaseUrl
+    row.model_name = payload.model
+    if payload.apiKey:
+        row.api_key_ciphertext = payload.apiKey
+    row.embedding_dimension = payload.dimension
+    row.enabled = payload.enabled
+    row.active = payload.active
+    row.updated_by = admin_user.id
+    if payload.active:
+        for other in db.scalars(select(ModelProviderConfig).where(ModelProviderConfig.scope == payload.scope, ModelProviderConfig.provider_code != payload.provider)).all():
+            other.active = False
+    db.commit()
+    db.refresh(row)
+    return serialize_model_provider(row)
+
+
+def model_provider_settings(db: Session) -> dict:
+    rows = db.scalars(select(ModelProviderConfig)).all()
+    result = {}
+    for scope in ["llm", "embedding"]:
+        providers = [serialize_model_provider(row) for row in rows if row.scope == scope]
+        active = next((item["provider"] for item in providers if item["active"]), None)
+        result[scope] = {"scope": scope, "activeProvider": active, "providers": providers}
+    return result
+
+
+def serialize_model_provider(row: ModelProviderConfig) -> dict:
+    masked = "******" if row.api_key_ciphertext else ""
+    return {"provider": row.provider_code, "displayName": row.display_name, "apiStyle": row.api_style, "apiBaseUrl": row.api_base_url, "model": row.model_name, "dimension": row.embedding_dimension, "enabled": row.enabled, "active": row.active, "hasApiKey": bool(row.api_key_ciphertext), "maskedApiKey": masked}
+
+
+def assign_user_orgs(db: Session, user_id: int, org_tags: list[str], primary_org: str) -> None:
+    user = db.get(User, user_id)
+    if not user:
+        raise BizError("用户不存在", 404)
+    if primary_org not in org_tags:
+        raise BizError("主组织必须包含在组织标签列表中", 400)
+    existing_orgs = {row.tag_id for row in db.scalars(select(OrgTag).where(OrgTag.tag_id.in_(org_tags))).all()}
+    missing = set(org_tags) - existing_orgs
+    if missing:
+        raise BizError(f"组织标签不存在: {','.join(sorted(missing))}", 400)
+    db.query(UserOrgTag).filter(UserOrgTag.user_id == user_id).delete()
+    for tag in org_tags:
+        db.add(UserOrgTag(user_id=user_id, tag_id=tag))
+    user.primary_org = primary_org
+    db.commit()
 
 
 def grant_tokens(db: Session, user_id: int, token_type: str, amount: int, reason: str) -> None:
@@ -130,4 +222,3 @@ def serialize_package(pkg: RechargePackage) -> dict:
 
 def serialize_order(order: RechargeOrder) -> dict:
     return {"id": order.id, "tradeNo": order.trade_no, "userId": order.user_id, "packageId": order.package_id, "amount": order.amount, "llmToken": order.llm_token, "embeddingToken": order.embedding_token, "status": order.status, "description": order.description, "payTime": order.pay_time.isoformat() if order.pay_time else None}
-
