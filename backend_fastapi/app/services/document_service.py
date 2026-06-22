@@ -229,7 +229,10 @@ def get_document_for_user(db: Session, user: User, file_md5: str) -> Document:
 def search_documents(db: Session, user: User, query: str, top_k: int) -> list[dict]:
     orgs = _user_orgs(user)
     if settings.search_backend == "elasticsearch":
-        return get_search_index().search(query, user.id, list(orgs), top_k)
+        query_vector = get_embedding_gateway().embed_texts([query])[0]
+        consume_user_tokens(db, user, "EMBEDDING", estimate_embedding_tokens([query]), "检索向量化", query)
+        db.commit()
+        return get_search_index().search(query, user.id, list(orgs), top_k, query_vector)
     rows = db.scalars(
         select(DocumentChunk)
         .join(Document, Document.file_md5 == DocumentChunk.file_md5)

@@ -37,7 +37,7 @@ class ElasticsearchIndex:
             self.client.index(index=self.index_name, id=doc_id, document=chunk)
         self.client.indices.refresh(index=self.index_name)
 
-    def search(self, query: str, user_id: int, org_tags: list[str], top_k: int) -> list[dict]:
+    def search(self, query: str, user_id: int, org_tags: list[str], top_k: int, query_vector: list[float] | None = None) -> list[dict]:
         filters = [
             {
                 "bool": {
@@ -50,16 +50,28 @@ class ElasticsearchIndex:
                 }
             }
         ]
+        bool_query = {"bool": {"must": [{"match": {"textContent": query}}], "filter": filters}}
+        es_query = bool_query
+        if query_vector:
+            es_query = {
+                "script_score": {
+                    "query": bool_query,
+                    "script": {
+                        "source": "cosineSimilarity(params.query_vector, 'vector') + 1.0",
+                        "params": {"query_vector": query_vector},
+                    },
+                }
+            }
         response = self.client.search(
             index=self.index_name,
             size=top_k,
-            query={"bool": {"must": [{"match": {"textContent": query}}], "filter": filters}},
+            query=es_query,
         )
         results = []
         for hit in response.get("hits", {}).get("hits", []):
             source = hit["_source"]
             source["score"] = hit.get("_score", 0)
-            source["retrievalMode"] = "elasticsearch"
+            source["retrievalMode"] = "hybrid" if query_vector else "elasticsearch"
             source["matchedChunkText"] = source.get("textContent", "")
             results.append(source)
         return results

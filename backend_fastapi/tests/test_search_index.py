@@ -34,11 +34,11 @@ def test_elasticsearch_index_indexes_and_searches():
     fake = _FakeElasticsearch()
     index = ElasticsearchIndex(client=fake, index_name="docs")
     index.index_chunks([{"fileMd5": "abc", "chunkId": 0, "textContent": "hello"}])
-    results = index.search("hello", user_id=1, org_tags=["default"], top_k=3)
+    results = index.search("hello", user_id=1, org_tags=["default"], top_k=3, query_vector=[0.1] * 8)
 
     assert fake.indices.created is True
     assert fake.indices.refreshed is True
     assert fake.indexed[0][1] == "abc:0"
-    assert results[0]["retrievalMode"] == "elasticsearch"
-    assert fake.last_query["bool"]["must"][0]["match"]["textContent"] == "hello"
-
+    assert results[0]["retrievalMode"] == "hybrid"
+    assert fake.last_query["script_score"]["query"]["bool"]["must"][0]["match"]["textContent"] == "hello"
+    assert fake.last_query["script_score"]["script"]["params"]["query_vector"] == [0.1] * 8
