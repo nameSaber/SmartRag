@@ -114,6 +114,8 @@ alembic upgrade head
 | `REDIS_URL` | Redis 连接串 | `redis://:PaiSmart2025@host.docker.internal:6379/0` |
 | `ES_URL` | Elasticsearch 地址 | `http://elastic:PaiSmart2025@host.docker.internal:9200` |
 | `KAFKA_BOOTSTRAP_SERVERS` | Kafka 地址 | `host.docker.internal:9092` |
+| `FILE_PROCESSING_BACKEND` | 文件处理后端：`local` 或 `kafka` | `kafka` |
+| `FILE_PROCESSING_TOPIC` | Kafka 文件处理主题 | `file-processing` |
 | `MINIO_ENDPOINT` | MinIO 地址 | `host.docker.internal:19000` |
 | `MINIO_ACCESS_KEY` | MinIO 账号 | `admin` |
 | `MINIO_SECRET_KEY` | MinIO 密码 | `PaiSmart2025` |
@@ -125,7 +127,14 @@ alembic upgrade head
 | `LLM_API_BASE_URL` | OpenAI-compatible API 地址 | `https://example.com/v1` |
 | `LLM_API_KEY` | LLM API Key | `sk-...` |
 | `LLM_MODEL_NAME` | LLM 模型名 | `gpt-compatible` |
+| `EMBEDDING_BACKEND` | Embedding 后端：`mock` 或 `openai_compatible` | `mock` |
+| `EMBEDDING_API_BASE_URL` | OpenAI-compatible Embedding API 地址 | `https://example.com/v1` |
+| `EMBEDDING_API_KEY` | Embedding API Key | `sk-...` |
+| `EMBEDDING_MODEL_NAME` | Embedding 模型名 | `embedding-compatible` |
+| `EMBEDDING_DIMENSION` | Embedding 维度 | `8` |
 | `WX_PAY_CALLBACK_SECRET` | 支付回调 HMAC 验签密钥 | `your-secret` |
+| `RATE_LIMIT_BACKEND` | 限流后端：`memory` 或 `redis` | `redis` |
+| `ADMIN_DANGEROUS_OPERATIONS_ENABLED` | 是否启用全量清理等高危管理接口 | `false` |
 
 ## 数据库迁移
 
@@ -155,4 +164,5 @@ curl http://localhost:8000/health/dependencies
 - 若启用 `OBJECT_STORAGE_BACKEND=minio`，请确保 MinIO 可访问且账号密码正确。
 - 若启用 `SEARCH_BACKEND=elasticsearch`，请确保 Elasticsearch 已启动并允许当前服务连接。
 - 当前微信支付回调使用 HMAC 验签占位实现，接入真实微信平台证书时需要替换验签逻辑。
-
+- `ADMIN_DANGEROUS_OPERATIONS_ENABLED` 默认必须保持 `false`，仅在明确维护窗口中临时开启。
+- `FILE_PROCESSING_BACKEND=kafka` 时，上传合并后会发布文件处理任务，需要单独运行消费者进程接收 Kafka 消息并调用文件处理任务。

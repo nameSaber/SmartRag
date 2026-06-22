@@ -78,14 +78,18 @@
 - 已完成并推送 LLM 网关与 token 消耗：支持 `mock` 和 OpenAI-compatible 调用结构，对话会写入 LLM token 消费账本。
 - 已完成并推送管理后台配置扩展：邀请函、限流配置、模型供应商、用户组织标签分配。
 - 已完成并推送支付回调签名校验：支持 `WX_PAY_CALLBACK_SECRET` HMAC 验签，未配置时允许本地开发跳过。
+- 已完成并推送部署 `README.md`。
+- 已完成并推送 Redis 限流模块：注册、登录、聊天入口已接入滑动窗口和日窗口限流。
+- 已完成并推送 Kafka 文件处理与 Embedding 网关：支持发布文件处理任务、mock/OpenAI-compatible embedding、embedding token 消耗和切块向量持久化。
+- 已完成并推送 WebSocket 流式输出与取消状态。
+- 已完成并推送后台运维模块：会话管理、MinIO 迁移、审计日志、高危清理开关。
 - 当前测试命令：在 `backend_fastapi/` 执行 `python -m pytest -q`。
-- 最近一次结果：`12 passed`。
+- 最近一次结果：`20 passed`。
 
 ## 后续优先级
 
-1. Redis 限流从当前预留配置升级为真实滑动窗口/日窗口计数。
-2. Kafka 消费者补齐：上传合并后发送文件处理消息，消费者执行解析、切块、embedding、写 ES。
-3. Embedding 网关补齐：支持 OpenAI-compatible embedding、维度校验、embedding token 消耗。
-4. 聊天 WebSocket 改为真实逐 token 流式输出，并补齐取消生成状态机。
-5. 管理后台继续补齐会话管理、MinIO 迁移、全量清理的环境开关和审计日志。
-6. 使用用户 Docker 依赖环境做一次端到端联调。
+1. 增加独立 Kafka consumer 启动命令/进程管理，持续消费 `file-processing` 主题。
+2. 接入真实文件解析器：PDF/DOCX/Markdown 解析、页码与 anchor 提取。
+3. Elasticsearch 混合检索升级为关键字 + 向量相似度融合排序。
+4. OpenAI-compatible LLM 真流式 SSE 接入，替换当前文本分片模拟流。
+5. 使用用户 Docker 依赖环境做一次端到端联调。
