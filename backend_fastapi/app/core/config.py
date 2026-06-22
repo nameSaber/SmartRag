@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://:PaiSmart2025@localhost:6379/0"
     es_url: str = "http://elastic:PaiSmart2025@localhost:9200"
     kafka_bootstrap_servers: str = "localhost:9092"
+    file_processing_backend: str = "local"
+    file_processing_topic: str = "file-processing"
     minio_endpoint: str = "localhost:19000"
     minio_access_key: str = "admin"
     minio_secret_key: str = "PaiSmart2025"
@@ -26,6 +28,11 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model_name: str = "gpt-compatible"
     llm_timeout_seconds: int = 30
+    embedding_backend: str = "mock"
+    embedding_api_base_url: str = ""
+    embedding_api_key: str = ""
+    embedding_model_name: str = "embedding-compatible"
+    embedding_dimension: int = 8
     wx_pay_callback_secret: str = ""
     rate_limit_backend: str = "memory"
     default_org_tag: str = "default"

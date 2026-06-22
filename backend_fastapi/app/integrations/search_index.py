@@ -25,6 +25,7 @@ class ElasticsearchIndex:
                     "userId": {"type": "integer"},
                     "orgTag": {"type": "keyword"},
                     "isPublic": {"type": "boolean"},
+                    "vector": {"type": "dense_vector", "dims": settings.embedding_dimension},
                 }
             },
         )

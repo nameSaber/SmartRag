@@ -1,14 +1,18 @@
 from datetime import datetime
+import json
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BizError
 from app.core.config import settings
+from app.integrations.embedding import estimate_embedding_tokens, get_embedding_gateway
+from app.integrations.kafka import get_task_publisher
 from app.integrations.object_storage import chunk_key, document_key, get_object_storage
 from app.integrations.search_index import get_search_index
 from app.models.document import Document, DocumentChunk, UploadChunk, UploadTask
 from app.models.user import User
+from app.services.user_service import consume_user_tokens
 
 SUPPORTED_TYPES = [
     {"extension": ".txt", "mimeType": "text/plain"},
@@ -115,15 +119,18 @@ def merge_file(db: Session, user: User, file_md5: str, file_name: str, total_chu
             user_id=user.id,
             org_tag=org,
             is_public=is_public,
-            vectorization_status="COMPLETED",
+            vectorization_status="PENDING" if settings.file_processing_backend == "kafka" else "COMPLETED",
         )
         db.add(document)
     task.status = 1
     task.merged_at = datetime.utcnow()
+    if settings.file_processing_backend == "kafka":
+        task.vectorization_status = "PENDING"
+        db.commit()
+        get_task_publisher().publish(_file_processing_payload(document, user.id, "UPLOAD_PROCESS"))
+        return _serialize_document(document)
     task.vectorization_status = "COMPLETED"
-    indexed_chunks = _rebuild_chunks(db, file_md5, text, file_name, user.id, org, is_public)
-    if settings.search_backend == "elasticsearch":
-        get_search_index().index_chunks(indexed_chunks)
+    rebuild_document_index(db, document, user)
     db.commit()
     return _serialize_document(document)
 
@@ -140,26 +147,62 @@ def _read_chunk_bytes(chunk: UploadChunk) -> bytes:
     return chunk.content
 
 
-def _rebuild_chunks(db: Session, file_md5: str, text: str, file_name: str, user_id: int, org_tag: str, is_public: bool) -> list[dict]:
-    # 这里先按固定窗口模拟解析切块，后续接入真实解析器和 Embedding 服务。
+def rebuild_document_index(db: Session, document: Document, user: User) -> list[dict]:
+    db.query(DocumentChunk).filter(DocumentChunk.file_md5 == document.file_md5).delete()
+    indexed_chunks = _build_index_chunks(document)
+    texts = [item["textContent"] for item in indexed_chunks]
+    vectors = get_embedding_gateway().embed_texts(texts)
+    consume_user_tokens(db, user, "EMBEDDING", estimate_embedding_tokens(texts), "文档向量化", document.file_md5)
+    for item, vector in zip(indexed_chunks, vectors):
+        item["vector"] = vector
+        db.add(
+            DocumentChunk(
+                file_md5=document.file_md5,
+                chunk_id=item["chunkId"],
+                text_content=item["textContent"],
+                embedding_json=json.dumps(vector),
+                page_number=item["pageNumber"],
+                anchor_text=item["anchorText"],
+            )
+        )
+    document.vectorization_status = "COMPLETED"
+    if settings.search_backend == "elasticsearch":
+        get_search_index().index_chunks(indexed_chunks)
+    return indexed_chunks
+
+
+def _build_index_chunks(document: Document) -> list[dict]:
+    # 这里先按固定窗口模拟解析切块，后续可替换为 PDF/DOCX 解析器。
     indexed_chunks = []
-    for index, start in enumerate(range(0, max(len(text), 1), 800)):
-        part = text[start : start + 800] or ""
-        db.add(DocumentChunk(file_md5=file_md5, chunk_id=index, text_content=part, page_number=1, anchor_text=f"chunk-{index}"))
+    for index, start in enumerate(range(0, max(len(document.content), 1), 800)):
+        part = document.content[start : start + 800] or ""
         indexed_chunks.append(
             {
-                "fileMd5": file_md5,
+                "fileMd5": document.file_md5,
                 "chunkId": index,
                 "textContent": part,
                 "pageNumber": 1,
                 "anchorText": f"chunk-{index}",
-                "fileName": file_name,
-                "userId": user_id,
-                "orgTag": org_tag,
-                "isPublic": is_public,
+                "fileName": document.file_name,
+                "userId": document.user_id,
+                "orgTag": document.org_tag,
+                "isPublic": document.is_public,
             }
         )
     return indexed_chunks
+
+
+def _file_processing_payload(document: Document, requester_id: int, task_type: str) -> dict:
+    return {
+        "fileMd5": document.file_md5,
+        "filePath": document.object_key,
+        "fileName": document.file_name,
+        "userId": document.user_id,
+        "orgTag": document.org_tag,
+        "isPublic": document.is_public,
+        "taskType": task_type,
+        "requesterId": requester_id,
+    }
 
 
 def accessible_documents(db: Session, user: User) -> list[dict]:

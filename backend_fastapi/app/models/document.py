@@ -60,7 +60,7 @@ class DocumentChunk(Base):
     file_md5: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     chunk_id: Mapped[int] = mapped_column(Integer, nullable=False)
     text_content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     page_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     anchor_text: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
