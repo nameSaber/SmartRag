@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BizError
 from app.core.config import settings
 from app.integrations.embedding import estimate_embedding_tokens, get_embedding_gateway
+from app.integrations.document_parser import parse_document_content
 from app.integrations.kafka import get_task_publisher
 from app.integrations.object_storage import chunk_key, document_key, get_object_storage
 from app.integrations.search_index import get_search_index
@@ -105,7 +106,7 @@ def merge_file(db: Session, user: User, file_md5: str, file_name: str, total_chu
     task.status = 2
     db.flush()
     raw = b"".join(_read_chunk_bytes(chunk) for chunk in chunks)
-    text = raw.decode("utf-8", errors="ignore")
+    text = parse_document_content(raw, file_name)
     object_key = document_key(file_md5, file_name)
     if settings.object_storage_backend == "minio":
         get_object_storage().put_bytes(object_key, raw)
