@@ -81,7 +81,10 @@ JWT_SECRET_KEY=change-me-in-production
 AUTO_CREATE_SCHEMA=false
 OBJECT_STORAGE_BACKEND=minio
 SEARCH_BACKEND=elasticsearch
-LLM_BACKEND=mock
+LLM_BACKEND=openai_compatible
+LLM_API_BASE_URL=https://api.deepseek.com
+LLM_API_KEY=your-deepseek-api-key
+LLM_MODEL_NAME=deepseek-v4-flash
 ```
 
 构建镜像：
@@ -95,6 +98,11 @@ docker build -t smart-rag-fastapi:latest .
 ```powershell
 docker compose up -d --build
 ```
+
+该 compose 会启动两个本项目容器：
+
+- `smart-rag-fastapi`：FastAPI API 服务。
+- `smart-rag-file-consumer`：Kafka 文件处理消费者，消费 `file-processing` 主题。
 
 服务启动时会自动执行：
 
@@ -123,10 +131,10 @@ alembic upgrade head
 | `OBJECT_STORAGE_BACKEND` | 文件存储后端：`database` 或 `minio` | `minio` |
 | `SEARCH_BACKEND` | 检索后端：`database` 或 `elasticsearch` | `elasticsearch` |
 | `ES_INDEX_NAME` | ES 索引名 | `pai_smart_documents` |
-| `LLM_BACKEND` | LLM 后端：`mock` 或 `openai_compatible` | `mock` |
-| `LLM_API_BASE_URL` | OpenAI-compatible API 地址 | `https://example.com/v1` |
-| `LLM_API_KEY` | LLM API Key | `sk-...` |
-| `LLM_MODEL_NAME` | LLM 模型名 | `gpt-compatible` |
+| `LLM_BACKEND` | LLM 后端：`mock` 或 `openai_compatible` | `openai_compatible` |
+| `LLM_API_BASE_URL` | DeepSeek/OpenAI-compatible API 地址 | `https://api.deepseek.com` |
+| `LLM_API_KEY` | DeepSeek API Key | `sk-...` |
+| `LLM_MODEL_NAME` | DeepSeek 模型名 | `deepseek-v4-flash` |
 | `EMBEDDING_BACKEND` | Embedding 后端：`mock` 或 `openai_compatible` | `mock` |
 | `EMBEDDING_API_BASE_URL` | OpenAI-compatible Embedding API 地址 | `https://example.com/v1` |
 | `EMBEDDING_API_KEY` | Embedding API Key | `sk-...` |
@@ -163,6 +171,11 @@ curl http://localhost:8000/health/dependencies
 - Docker 部署建议使用 MySQL 和 Alembic，不建议使用 SQLite。
 - 若启用 `OBJECT_STORAGE_BACKEND=minio`，请确保 MinIO 可访问且账号密码正确。
 - 若启用 `SEARCH_BACKEND=elasticsearch`，请确保 Elasticsearch 已启动并允许当前服务连接。
+- LLM 已按 DeepSeek OpenAI-compatible API 配置，部署前必须设置 `LLM_API_KEY` 或宿主环境变量 `DEEPSEEK_API_KEY`。
 - 当前微信支付回调使用 HMAC 验签占位实现，接入真实微信平台证书时需要替换验签逻辑。
 - `ADMIN_DANGEROUS_OPERATIONS_ENABLED` 默认必须保持 `false`，仅在明确维护窗口中临时开启。
-- `FILE_PROCESSING_BACKEND=kafka` 时，上传合并后会发布文件处理任务，需要单独运行消费者进程接收 Kafka 消息并调用文件处理任务。
+- `FILE_PROCESSING_BACKEND=kafka` 时，上传合并后会发布文件处理任务，需要单独运行消费者进程接收 Kafka 消息并调用文件处理任务：
+
+```powershell
+python -m app.consumers.file_processing_consumer
+```

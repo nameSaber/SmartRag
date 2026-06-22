@@ -83,6 +83,7 @@
 - 已完成并推送 Kafka 文件处理与 Embedding 网关：支持发布文件处理任务、mock/OpenAI-compatible embedding、embedding token 消耗和切块向量持久化。
 - 已完成并推送 WebSocket 流式输出与取消状态。
 - 已完成并推送后台运维模块：会话管理、MinIO 迁移、审计日志、高危清理开关。
+- 用户已选择 LLM 使用 DeepSeek；配置示例切到 `https://api.deepseek.com` 和 `deepseek-v4-flash`。
 - 当前测试命令：在 `backend_fastapi/` 执行 `python -m pytest -q`。
 - 最近一次结果：`20 passed`。
 

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 def client(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("LLM_BACKEND", "mock")
 
     # 配置在模块导入时缓存，测试中重载相关模块可保持数据库隔离。
     from app.core.config import get_settings

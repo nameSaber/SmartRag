@@ -25,7 +25,42 @@ services:
       OBJECT_STORAGE_BACKEND: minio
       SEARCH_BACKEND: elasticsearch
       ES_INDEX_NAME: pai_smart_documents
-      LLM_BACKEND: mock
+      LLM_BACKEND: openai_compatible
+      LLM_API_BASE_URL: https://api.deepseek.com
+      LLM_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LLM_MODEL_NAME: deepseek-v4-flash
+      EMBEDDING_BACKEND: mock
+      RATE_LIMIT_BACKEND: redis
+      REGISTRATION_MODE: OPEN
+      AUTO_CREATE_SCHEMA: "false"
+
+  file-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smart-rag-file-consumer
+    restart: unless-stopped
+    command: ["python", "-m", "app.consumers.file_processing_consumer"]
+    environment:
+      APP_NAME: PaiSmart FastAPI
+      DATABASE_URL: mysql+pymysql://root:PaiSmart2025@host.docker.internal:3306/pai_smart_fastapi?charset=utf8mb4
+      JWT_SECRET_KEY: change-me-in-production
+      REDIS_URL: redis://:PaiSmart2025@host.docker.internal:6379/0
+      ES_URL: http://elastic:PaiSmart2025@host.docker.internal:9200
+      KAFKA_BOOTSTRAP_SERVERS: host.docker.internal:9092
+      FILE_PROCESSING_BACKEND: kafka
+      FILE_PROCESSING_TOPIC: file-processing
+      MINIO_ENDPOINT: host.docker.internal:19000
+      MINIO_ACCESS_KEY: admin
+      MINIO_SECRET_KEY: PaiSmart2025
+      MINIO_BUCKET: pai-smart
+      OBJECT_STORAGE_BACKEND: minio
+      SEARCH_BACKEND: elasticsearch
+      ES_INDEX_NAME: pai_smart_documents
+      LLM_BACKEND: openai_compatible
+      LLM_API_BASE_URL: https://api.deepseek.com
+      LLM_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LLM_MODEL_NAME: deepseek-v4-flash
       EMBEDDING_BACKEND: mock
       RATE_LIMIT_BACKEND: redis
       REGISTRATION_MODE: OPEN

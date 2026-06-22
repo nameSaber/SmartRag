@@ -1,3 +1,6 @@
+import json
+from collections.abc import Iterable
+
 import httpx
 
 from app.core.config import settings
@@ -9,8 +12,14 @@ class LlmGateway:
             return self._generate_openai_compatible(question, references)
         return self._generate_mock(question, references)
 
-    def stream_text(self, content: str):
-        # 当前以词/字符片段模拟 token 流，真实流式供应商接入时可替换为 SSE chunk。
+    def stream(self, question: str, references: list[dict]) -> Iterable[str]:
+        if settings.llm_backend == "openai_compatible":
+            yield from self._stream_openai_compatible(question, references)
+            return
+        yield from self.stream_text(self._generate_mock(question, references))
+
+    def stream_text(self, content: str) -> Iterable[str]:
+        # 本地 mock 流式输出按词切片，真实 DeepSeek/OpenAI-compatible 流式输出走 SSE。
         parts = content.split()
         if not parts:
             yield content
@@ -24,23 +33,52 @@ class LlmGateway:
             return f"根据知识库检索结果：{references[0]['matchedChunkText']}"
         return f"已收到问题：{question}"
 
-    def _generate_openai_compatible(self, question: str, references: list[dict]) -> str:
-        if not settings.llm_api_base_url or not settings.llm_api_key:
-            raise RuntimeError("LLM 配置不完整")
+    def _build_payload(self, question: str, references: list[dict], stream: bool) -> dict:
         reference_text = "\n".join(item.get("matchedChunkText", "") for item in references[:5])
-        payload = {
+        return {
             "model": settings.llm_model_name,
             "messages": [
                 {"role": "system", "content": "请先给出结论，再给出依据。若信息不足，请明确说明。"},
                 {"role": "user", "content": f"参考资料：\n{reference_text}\n\n问题：{question}"},
             ],
+            "stream": stream,
+            # DeepSeek V4 默认开启 thinking；这里显式关闭，保持 RAG 问答响应更直接。
+            "thinking": {"type": "disabled"},
         }
-        headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+
+    def _headers(self) -> dict:
+        if not settings.llm_api_base_url or not settings.llm_api_key:
+            raise RuntimeError("LLM 配置不完整")
+        return {"Authorization": f"Bearer {settings.llm_api_key}", "Content-Type": "application/json"}
+
+    def _generate_openai_compatible(self, question: str, references: list[dict]) -> str:
+        payload = self._build_payload(question, references, stream=False)
         with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
-            response = client.post(settings.llm_api_base_url.rstrip("/") + "/chat/completions", json=payload, headers=headers)
+            response = client.post(settings.llm_api_base_url.rstrip("/") + "/chat/completions", json=payload, headers=self._headers())
             response.raise_for_status()
             data = response.json()
         return data["choices"][0]["message"]["content"]
+
+    def _stream_openai_compatible(self, question: str, references: list[dict]) -> Iterable[str]:
+        payload = self._build_payload(question, references, stream=True)
+        with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
+            with client.stream("POST", settings.llm_api_base_url.rstrip("/") + "/chat/completions", json=payload, headers=self._headers()) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    chunk = parse_openai_sse_line(line)
+                    if chunk:
+                        yield chunk
+
+
+def parse_openai_sse_line(line: str) -> str | None:
+    if not line or not line.startswith("data:"):
+        return None
+    data = line.removeprefix("data:").strip()
+    if data == "[DONE]":
+        return None
+    payload = json.loads(data)
+    delta = payload.get("choices", [{}])[0].get("delta", {})
+    return delta.get("content") or None
 
 
 def estimate_tokens(*texts: str) -> int:
@@ -51,3 +89,4 @@ def estimate_tokens(*texts: str) -> int:
 
 def get_llm_gateway() -> LlmGateway:
     return LlmGateway()
+
