@@ -12,8 +12,9 @@ from app.core.responses import ok
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # 早期开发阶段直接建表，后续接入 Alembic 后迁移到版本化脚本。
-    create_schema()
+    # 测试和本地快速启动可以自动建表；Docker/生产环境应通过 Alembic 迁移建表。
+    if settings.auto_create_schema:
+        create_schema()
     yield
 
 

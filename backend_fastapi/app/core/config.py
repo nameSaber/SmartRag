@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     default_org_name: str = "默认组织"
     initial_llm_tokens: int = 100000
     initial_embedding_tokens: int = 100000
+    auto_create_schema: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
@@ -24,4 +25,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

@@ -20,4 +20,4 @@ services:
       MINIO_ACCESS_KEY: admin
       MINIO_SECRET_KEY: PaiSmart2025
       REGISTRATION_MODE: OPEN
-
+      AUTO_CREATE_SCHEMA: "false"
