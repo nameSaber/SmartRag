@@ -1,0 +1,23 @@
+name: smart_rag_fastapi
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smart-rag-fastapi
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      APP_NAME: PaiSmart FastAPI
+      DATABASE_URL: mysql+pymysql://root:PaiSmart2025@host.docker.internal:3306/pai_smart_fastapi?charset=utf8mb4
+      JWT_SECRET_KEY: change-me-in-production
+      REDIS_URL: redis://:PaiSmart2025@host.docker.internal:6379/0
+      ES_URL: http://elastic:PaiSmart2025@host.docker.internal:9200
+      KAFKA_BOOTSTRAP_SERVERS: host.docker.internal:9092
+      MINIO_ENDPOINT: host.docker.internal:19000
+      MINIO_ACCESS_KEY: admin
+      MINIO_SECRET_KEY: PaiSmart2025
+      REGISTRATION_MODE: OPEN
+

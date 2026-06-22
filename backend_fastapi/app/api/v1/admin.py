@@ -1,0 +1,90 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.core.deps import require_admin
+from app.core.responses import ok
+from app.core.security import hash_password
+from app.models.admin import RateLimitConfig
+from app.models.user import OrgTag, User
+from app.schemas.admin import OrgTagUpsertRequest, RechargePackageRequest, TokenGrantRequest
+from app.schemas.user import RegisterRequest
+from app.services.admin_service import create_admin_user, create_package, grant_tokens, list_packages, list_users, serialize_org_tag, upsert_org_tag
+
+router = APIRouter()
+
+
+@router.get("/users")
+def users(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(list_users(db))
+
+
+@router.post("/admins")
+def admins(payload: RegisterRequest, _: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(create_admin_user(db, payload.username, hash_password(payload.password)))
+
+
+@router.get("/status")
+def status(_: User = Depends(require_admin)):
+    return ok({"status": "UP", "database": "UP"})
+
+
+@router.get("/usage-overview")
+def usage_overview(_: User = Depends(require_admin)):
+    return ok({"days": 7, "today": {}, "trends": [], "llmRankings": [], "embeddingRankings": [], "alerts": []})
+
+
+@router.get("/org-tags")
+def org_tags(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok([serialize_org_tag(org) for org in db.scalars(select(OrgTag).order_by(OrgTag.tag_id)).all()])
+
+
+@router.post("/org-tags")
+def create_org_tag(payload: OrgTagUpsertRequest, _: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(upsert_org_tag(db, payload.tagId, payload.name, payload.description, payload.parentTag, payload.uploadMaxSizeBytes))
+
+
+@router.put("/org-tags/{tagId}")
+def update_org_tag(tagId: str, payload: OrgTagUpsertRequest, _: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(upsert_org_tag(db, tagId, payload.name, payload.description, payload.parentTag, payload.uploadMaxSizeBytes))
+
+
+@router.get("/rate-limits")
+def rate_limits(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    keys = ["chatMessage", "llmGlobalToken", "embeddingUploadToken", "embeddingQueryRequest", "embeddingQueryGlobalToken"]
+    for key in keys:
+        if not db.get(RateLimitConfig, key):
+            db.add(RateLimitConfig(config_key=key))
+    db.commit()
+    rows = db.scalars(select(RateLimitConfig)).all()
+    return ok({row.config_key: {"singleMax": row.single_max, "minuteMax": row.minute_max, "dayMax": row.day_max} for row in rows})
+
+
+@router.post("/users/token-grant")
+def token_grant(payload: TokenGrantRequest, _: User = Depends(require_admin), db: Session = Depends(get_db)):
+    grant_tokens(db, payload.userId, payload.tokenType, payload.amount, payload.reason)
+    return ok(None)
+
+
+@router.get("/recharge/packages")
+def admin_packages(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(list_packages(db))
+
+
+@router.post("/recharge/packages")
+def admin_create_package(payload: RechargePackageRequest, _: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(
+        create_package(
+            db,
+            package_name=payload.packageName,
+            package_price=payload.packagePrice,
+            package_desc=payload.packageDesc,
+            package_benefit=payload.packageBenefit,
+            llm_token=payload.llmToken,
+            embedding_token=payload.embeddingToken,
+            enabled=payload.enabled,
+            sort_order=payload.sortOrder,
+        )
+    )
+
