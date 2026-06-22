@@ -98,6 +98,19 @@ def get_generation(db: Session, user: User, generation_id: str) -> dict | None:
     return serialize_generation(row)
 
 
+def cancel_generation(db: Session, user: User, generation_id: str) -> dict | None:
+    row = db.get(Generation, generation_id)
+    if not row or row.user_id != user.id:
+        return None
+    if row.status not in {"COMPLETED", "FAILED"}:
+        row.status = "CANCELLED"
+    else:
+        row.status = "CANCELLED"
+    db.commit()
+    db.refresh(row)
+    return serialize_generation(row)
+
+
 def active_generation(db: Session, user: User) -> dict | None:
     row = db.scalar(select(Generation).where(Generation.user_id == user.id, Generation.status == "STREAMING").order_by(Generation.created_at.desc()))
     return serialize_generation(row) if row else None

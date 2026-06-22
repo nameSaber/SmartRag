@@ -9,6 +9,15 @@ class LlmGateway:
             return self._generate_openai_compatible(question, references)
         return self._generate_mock(question, references)
 
+    def stream_text(self, content: str):
+        # 当前以词/字符片段模拟 token 流，真实流式供应商接入时可替换为 SSE chunk。
+        parts = content.split()
+        if not parts:
+            yield content
+            return
+        for part in parts:
+            yield part + " "
+
     def _generate_mock(self, question: str, references: list[dict]) -> str:
         # mock 后端用于本地测试和无外部模型时的联调，保留引用语义。
         if references:

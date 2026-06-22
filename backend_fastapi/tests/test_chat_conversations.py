@@ -20,11 +20,20 @@ def test_conversation_generation_feedback_and_websocket(client):
         generated = websocket.receive_json()
         assert generated["type"] == "generation"
         generation_id = generated["data"]["generationId"]
-        assert websocket.receive_json()["type"] == "done"
+        seen_delta = False
+        while True:
+            event = websocket.receive_json()
+            if event["type"] == "delta":
+                seen_delta = True
+            if event["type"] == "done":
+                break
+        assert seen_delta is True
+        websocket.send_json({"type": "cancel", "generationId": generation_id})
+        assert websocket.receive_json()["type"] == "cancelled"
 
     snapshot = client.get(f"/api/v1/chat/generation/{generation_id}", headers=headers).json()
     assert snapshot["code"] == 200
-    assert snapshot["data"]["status"] == "COMPLETED"
+    assert snapshot["data"]["status"] == "CANCELLED"
 
     history = client.get("/api/v1/users/conversation", headers=headers, params={"conversationId": conversation_id}).json()
     assert history["code"] == 200
@@ -36,4 +45,3 @@ def test_conversation_generation_feedback_and_websocket(client):
     archived = client.put(f"/api/v1/users/conversations/{conversation_id}/archive", headers=headers).json()
     assert archived["code"] == 200
     assert archived["data"]["status"] == "ARCHIVED"
-
