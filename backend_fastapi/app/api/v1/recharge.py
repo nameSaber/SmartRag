@@ -8,6 +8,7 @@ from app.core.responses import ok
 from app.models.admin import RechargeOrder
 from app.models.user import User
 from app.schemas.admin import CreateOrderRequest, PayCallbackRequest
+from app.integrations.wechat_pay import verify_callback_signature
 from app.services.admin_service import create_order, list_packages, pay_callback, serialize_order
 
 router = APIRouter()
@@ -25,6 +26,7 @@ def create_recharge_order(payload: CreateOrderRequest, current_user: User = Depe
 
 @router.post("/pay-callback")
 def callback(payload: PayCallbackRequest, db: Session = Depends(get_db)):
+    verify_callback_signature(payload.tradeNo, payload.transactionId, payload.status, payload.signature)
     return ok(pay_callback(db, payload.tradeNo, payload.transactionId, payload.status))
 
 

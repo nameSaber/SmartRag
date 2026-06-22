@@ -35,6 +35,7 @@ class PayCallbackRequest(BaseModel):
     tradeNo: str
     transactionId: str | None = None
     status: str = "SUCCEED"
+    signature: str | None = None
 
 
 class InviteCodeRequest(BaseModel):
